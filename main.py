@@ -1,4 +1,5 @@
 import logging
+import re
 from typing import List, Dict, Optional
 from telegram import Update
 from telegram.ext import Application, CommandHandler, ContextTypes, MessageHandler, filters
@@ -399,7 +400,9 @@ async def process_participant_confirmation(update: Update, context: ContextTypes
             "✏️ **Изменено:**\n" + "\n".join(changes) +
             "\n\n👤 **Итоговые данные:**\n" +
             format_participant_block(participant_data) +
-            "\n\n✅ Подтвердить изменения?"
+            "\n\n✅ **Что делать дальше?**\n"
+            "- Напишите **ДА** или **НЕТ**\n"
+            "- Или пришлите новые исправления"
         )
 
         await update.message.reply_text(confirmation_text, parse_mode='Markdown')
@@ -444,12 +447,15 @@ async def process_participant_confirmation(update: Update, context: ContextTypes
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     role = get_user_role(user_id)
-    
+
     if role == "unauthorized":
         await update.message.reply_text("❌ У вас нет доступа к этому боту.")
         return
-    
+
     message_text = update.message.text.strip()
+
+    # Отладка состояния пользователя
+    logger.info(f"User {user_id} state: {context.user_data}")
     
     # Проверяем режим ожидания данных участника
     if context.user_data.get('waiting_for_participant'):
@@ -476,13 +482,29 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
 # Обработка подтверждения пользователя
 async def handle_participant_confirmation(update: Update, context: ContextTypes.DEFAULT_TYPE, text: str):
-    text_upper = text.upper()
+    # Нормализуем текст ответа
+    normalized = re.sub(r'[\s\.,!]', '', text.upper())
+
+    if not normalized:
+        await update.message.reply_text(
+            "❓ Ответ не распознан. Напишите ДА или НЕТ или пришлите новые данные."
+        )
+        return
+
+    positive = ['ДА', 'YES', 'Y', 'ОК', 'OK', '+']
+    negative = ['НЕТ', 'NO', 'N', '-', 'НИСТ', 'НИТ']
     
+    def is_positive(txt: str) -> bool:
+        return txt in positive or any(txt.startswith(p) for p in positive)
+
+    def is_negative(txt: str) -> bool:
+        return txt in negative or any(txt.startswith(n) for n in negative)
+
     # Обработка дублей
     if context.user_data.get('confirming_duplicate'):
         participant_data = context.user_data['parsed_participant']
-        
-        if text_upper in ['ДА', 'YES', 'Y', 'ОК', 'OK', '+']:
+
+        if is_positive(normalized):
             # Добавляем как нового участника несмотря на дубль
             participant_id = add_participant(participant_data)
             context.user_data.clear()
@@ -495,7 +517,7 @@ async def handle_participant_confirmation(update: Update, context: ContextTypes.
                 parse_mode='Markdown'
             )
             
-        elif text_upper in ['ЗАМЕНИТЬ', 'REPLACE', 'ОБНОВИТЬ', 'UPDATE']:
+        elif normalized in ['ЗАМЕНИТЬ', 'REPLACE', 'ОБНОВИТЬ', 'UPDATE']:
             # Находим существующего участника и обновляем
             existing = find_participant_by_name(participant_data['FullNameRU'])
             if existing:
@@ -514,7 +536,7 @@ async def handle_participant_confirmation(update: Update, context: ContextTypes.
                 else:
                     await update.message.reply_text("❌ Ошибка обновления участника.")
             
-        elif text_upper in ['НЕТ', 'NO', 'N', '-']:
+        elif is_negative(normalized):
             # Отменяем добавление
             context.user_data.clear()
             await update.message.reply_text(
@@ -531,7 +553,7 @@ async def handle_participant_confirmation(update: Update, context: ContextTypes.
         return
     
     # Обычное подтверждение (без дублей)
-    if text_upper in ['ДА', 'YES', 'Y', 'ОК', 'OK', '+']:
+    if is_positive(normalized):
         # Сохраняем участника
         participant_data = context.user_data['parsed_participant']
         
@@ -561,7 +583,7 @@ async def handle_participant_confirmation(update: Update, context: ContextTypes.
 
         await update.message.reply_text(success_text, parse_mode='Markdown')
         
-    elif text_upper in ['НЕТ', 'NO', 'N', '-']:
+    elif is_negative(normalized):
         # Отменяем добавление
         context.user_data.clear()
         await update.message.reply_text(
