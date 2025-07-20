@@ -65,46 +65,53 @@ def parse_confirmation_template(text: str) -> Dict:
     import re
 
     FIELD_MAPPING = {
-        'Имя (рус)': 'FullNameRU',
-        'Имя (англ)': 'FullNameEN',
-        'Пол': 'Gender',
-        'Размер': 'Size',
-        'Церковь': 'Church',
-        'Роль': 'Role',
-        'Департамент': 'Department',
-        'Город': 'CountryAndCity',
-        'Кто подал': 'SubmittedBy',
-        'Контакты': 'ContactInformation',
+        "Имя (рус)": "FullNameRU",
+        "Имя (англ)": "FullNameEN",
+        "Пол": "Gender",
+        "Размер": "Size",
+        "Церковь": "Church",
+        "Роль": "Role",
+        "Департамент": "Department",
+        "Город": "CountryAndCity",
+        "Кто подал": "SubmittedBy",
+        "Контакты": "ContactInformation",
     }
 
-    prefix_re = re.compile(r'^[🌍👤⚥👕⛪👥🏢🏙️👨‍💼📞\*\s]+(.+)$')
-    kv_re = re.compile(r'^(?P<key>.+?):\s*(?P<value>.+)$')
+    emoji_re = re.compile(r"[👤🌍⚥👕⛪👥🏢🏙️👨‍💼📞]")
+    formatting_re = re.compile(r"\*+")
 
     data: Dict = {}
+
     for raw_line in text.splitlines():
         line = raw_line.strip()
         if not line:
             continue
 
-        line = line.replace('**', '')
-
-        m_pref = prefix_re.match(line)
-        if m_pref:
-            line = m_pref.group(1).strip()
-
-        m_kv = kv_re.match(line)
-        if not m_kv:
+        # Find the first ':' which separates key and value
+        colon_pos = line.find(":")
+        if colon_pos == -1:
             continue
 
-        key = m_kv.group('key').strip()
-        value = m_kv.group('value').strip()
+        raw_key = line[:colon_pos]
+        raw_value = line[colon_pos + 1 :]
 
-        if re.search(r'[❌➖]|Не указано', value):
-            value = ''
+        # Clean key from emojis and formatting
+        key = emoji_re.sub("", raw_key)
+        key = formatting_re.sub("", key).strip()
+
+        # Clean value from formatting and service markers
+        value = formatting_re.sub("", raw_value)
+        value = re.sub(r"[❌➖]", "", value)
+        value = value.replace("Не указано", "").strip()
 
         field = FIELD_MAPPING.get(key)
-        if field:
-            data[field] = value
+        if not field:
+            continue
+
+        if field == "Church" and value.lower() == "церковь":
+            value = ""
+
+        data[field] = value
 
     return data
 
