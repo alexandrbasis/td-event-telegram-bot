@@ -16,5 +16,13 @@ class ParserTestCase(unittest.TestCase):
         self.assertEqual(data['Role'], 'TEAM')
         self.assertEqual(data['Department'], 'Worship')
 
+    def test_russian_size_and_gender_priority(self):
+        text = "Ольга Сергеевна жен М Афула церковь Благодать"
+        data = parse_participant_data(text)
+        self.assertEqual(data['Gender'], 'F')
+        self.assertEqual(data['Size'], 'М')
+        self.assertEqual(data['CountryAndCity'], 'Афула')
+        self.assertEqual(data['Church'], 'церковь Благодать')
+
 if __name__ == '__main__':
     unittest.main()
