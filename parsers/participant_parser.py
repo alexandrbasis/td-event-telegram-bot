@@ -28,7 +28,7 @@ DEPARTMENT_KEYWORDS = {
 }
 
 CHURCH_KEYWORDS = ['ЦЕРКОВЬ', 'CHURCH', 'ХРАМ', 'ОБЩИНА']
-SIZES = ['XS', 'S', 'M', 'L', 'XL', 'XXL', '2XL', '3XL']
+SIZES = ['XS', 'S', 'M', 'L', 'XL', 'XXL', '2XL', '3XL', 'М', 'Л', 'С']
 
 ISRAEL_CITIES = [
     'ХАЙФА', 'HAIFA', 'ТЕЛ-АВИВ', 'TEL AVIV', 'ТЕЛЬ-АВИВ', 'ИЕРУСАЛИМ', 'JERUSALEM',
@@ -36,7 +36,8 @@ ISRAEL_CITIES = [
     'РИШОН-ЛЕ-ЦИОН', 'RISHON LEZION', 'ПЕТАХ-ТИКВА', 'PETAH TIKVA', 'РЕХОВОТ', 'REHOVOT',
     'БАТ-ЯМ', 'BAT YAM', 'КАРМИЭЛЬ', 'CARMIEL', 'МОДИИН', 'MODIIN', 'НАЗАРЕТ', 'NAZARETH',
     'КИРЬЯТ-ГАТ', 'KIRYAT GAT', 'ЭЙЛАТ', 'EILAT', 'АККО', 'ACRE', 'РАМАТ-ГАН', 'RAMAT GAN',
-    'БНЕЙ-БРАК', 'BNEI BRAK', 'ЦФАТ', 'SAFED', 'ТВЕРИЯ', 'TIBERIAS', 'ГЕРЦЛИЯ', 'HERZLIYA'
+    'БНЕЙ-БРАК', 'BNEI BRAK', 'ЦФАТ', 'SAFED', 'ТВЕРИЯ', 'TIBERIAS', 'ГЕРЦЛИЯ', 'HERZLIYA',
+    'АФУЛА', 'AFULA'
 ]
 
 
@@ -65,36 +66,47 @@ def _extract_contacts(all_words: list, processed_words: set, data: Dict):
 
 
 def _extract_simple_fields(all_words: list, processed_words: set, data: Dict):
+    gender_explicit = False
     for word in all_words:
         if word in processed_words:
             continue
         word_upper = word.upper()
-        for gender, keywords in GENDER_KEYWORDS.items():
-            if word_upper in keywords:
-                data['Gender'] = gender
-                processed_words.add(word)
-                break
-        else:
-            if word_upper in SIZES:
+
+        if word_upper in GENDER_KEYWORDS['F']:
+            data['Gender'] = 'F'
+            gender_explicit = True
+            processed_words.add(word)
+            continue
+
+        if word_upper in GENDER_KEYWORDS['M']:
+            if gender_explicit and data['Gender'] == 'F' and word_upper in SIZES:
                 data['Size'] = word_upper
-                processed_words.add(word)
-            elif any(keyword == word_upper for keyword in ROLE_KEYWORDS['TEAM']):
-                data['Role'] = 'TEAM'
-                processed_words.add(word)
-            elif any(keyword == word_upper for keyword in ROLE_KEYWORDS['CANDIDATE']):
-                data['Role'] = 'CANDIDATE'
-                processed_words.add(word)
-            elif not contains_hebrew(word):
-                dept_found = False
-                for dept, keywords in DEPARTMENT_KEYWORDS.items():
-                    if any(keyword == word_upper for keyword in keywords):
-                        data['Department'] = dept
-                        processed_words.add(word)
-                        dept_found = True
-                        break
-                if not dept_found and word_upper in ISRAEL_CITIES:
-                    data['CountryAndCity'] = word
+            else:
+                data['Gender'] = 'M'
+                gender_explicit = True
+            processed_words.add(word)
+            continue
+
+        if word_upper in SIZES:
+            data['Size'] = word_upper
+            processed_words.add(word)
+        elif any(keyword == word_upper for keyword in ROLE_KEYWORDS['TEAM']):
+            data['Role'] = 'TEAM'
+            processed_words.add(word)
+        elif any(keyword == word_upper for keyword in ROLE_KEYWORDS['CANDIDATE']):
+            data['Role'] = 'CANDIDATE'
+            processed_words.add(word)
+        elif not contains_hebrew(word):
+            dept_found = False
+            for dept, keywords in DEPARTMENT_KEYWORDS.items():
+                if any(keyword == word_upper for keyword in keywords):
+                    data['Department'] = dept
                     processed_words.add(word)
+                    dept_found = True
+                    break
+            if not dept_found and word_upper in ISRAEL_CITIES:
+                data['CountryAndCity'] = word
+                processed_words.add(word)
 
 
 def _extract_church(all_words: list, processed_words: set, data: Dict):
