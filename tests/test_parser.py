@@ -20,7 +20,7 @@ class ParserTestCase(unittest.TestCase):
         text = "Ольга Сергеевна жен М Афула церковь Благодать"
         data = parse_participant_data(text)
         self.assertEqual(data['Gender'], 'F')
-        self.assertEqual(data['Size'], 'М')
+        self.assertEqual(data['Size'], '')
         self.assertEqual(data['CountryAndCity'], 'Афула')
         self.assertEqual(data['Church'], 'церковь Благодать')
 

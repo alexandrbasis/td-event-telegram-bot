@@ -28,7 +28,15 @@ DEPARTMENT_KEYWORDS = {
 }
 
 CHURCH_KEYWORDS = ['ЦЕРКОВЬ', 'CHURCH', 'ХРАМ', 'ОБЩИНА']
-SIZES = ['XS', 'S', 'M', 'L', 'XL', 'XXL', '2XL', '3XL', 'М', 'Л', 'С', 'MEDIUM', 'LARGE', 'SMALL']
+SIZES = [
+    'XS', 'EXTRA SMALL', 'EXTRASMALL',
+    'S', 'SMALL',
+    'M', 'MEDIUM',
+    'L', 'LARGE',
+    'XL', 'EXTRA LARGE', 'EXTRALARGE',
+    'XXL', '2XL', 'EXTRA EXTRA LARGE',
+    '3XL', 'XXXL'
+]
 
 ISRAEL_CITIES = [
     'ХАЙФА', 'HAIFA', 'ТЕЛ-АВИВ', 'TEL AVIV', 'ТЕЛЬ-АВИВ', 'ИЕРУСАЛИМ', 'JERUSALEM',
