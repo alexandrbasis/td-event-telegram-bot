@@ -5,12 +5,12 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # Токен бота (получите у @BotFather)
-BOT_TOKEN = os.getenv('BOT_TOKEN', '7655205858:AAGftiITVgSM2dlGcMFZo5VJaYJ0kYNi14g')
+BOT_TOKEN = os.getenv('BOT_TOKEN', 'YOUR_BOT_TOKEN_HERE')
 
 # Настройки бота
 BOT_USERNAME = 'tresdias_israelbot'
 
-# Роли пользователей (пока заглушки)
+# Роли пользователей
 COORDINATOR_IDS = [311380449, 5212991086, 649919193]  # ID пользователей-координаторов
 VIEWER_IDS = []       # ID пользователей-наблюдателей
 
