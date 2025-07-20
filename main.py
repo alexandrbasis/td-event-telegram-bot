@@ -55,82 +55,60 @@ def merge_participant_data(existing_data: Dict, updates: Dict) -> Dict:
     """Объединяет существующие данные участника с обновлениями"""
     merged = existing_data.copy()
     for key, value in updates.items():
-        if value:
+        if value is not None and value != '':
             merged[key] = value
     return merged
 
 
 def parse_confirmation_template(text: str) -> Dict:
-    """Извлекает данные из скопированного блока подтверждения."""
-    import re
+    """Парсит простой формат: Ключ: Значение"""
 
-    FIELD_MAPPING = {
-        "Имя (рус)": "FullNameRU",
-        "Имя (англ)": "FullNameEN",
-        "Пол": "Gender",
-        "Размер": "Size",
-        "Церковь": "Church",
-        "Роль": "Role",
-        "Департамент": "Department",
-        "Город": "CountryAndCity",
-        "Кто подал": "SubmittedBy",
-        "Контакты": "ContactInformation",
+    mapping = {
+        'Имя (рус)': 'FullNameRU',
+        'Имя (англ)': 'FullNameEN',
+        'Пол': 'Gender',
+        'Размер': 'Size',
+        'Церковь': 'Church',
+        'Роль': 'Role',
+        'Департамент': 'Department',
+        'Город': 'CountryAndCity',
+        'Кто подал': 'SubmittedBy',
+        'Контакты': 'ContactInformation',
     }
-
-    emoji_re = re.compile(r"[👤🌍⚥👕⛪👥🏢🏙️👨‍💼📞]")
-    formatting_re = re.compile(r"\*+")
 
     data: Dict = {}
 
-    for raw_line in text.splitlines():
-        line = raw_line.strip()
-        if not line:
-            continue
+    for line in text.splitlines():
+        line = line.strip()
+        if ':' in line:
+            key, value = line.split(':', 1)
+            key = key.strip()
+            value = value.strip()
 
-        # Find the first ':' which separates key and value
-        colon_pos = line.find(":")
-        if colon_pos == -1:
-            continue
+            if value in ['➖ Не указано', '❌ Не указано', '']:
+                continue
 
-        raw_key = line[:colon_pos]
-        raw_value = line[colon_pos + 1 :]
-
-        # Clean key from emojis and formatting
-        key = emoji_re.sub("", raw_key)
-        key = formatting_re.sub("", key).strip()
-
-        # Clean value from formatting and service markers
-        value = formatting_re.sub("", raw_value)
-        value = re.sub(r"[❌➖]", "", value)
-        value = value.replace("Не указано", "").strip()
-
-        field = FIELD_MAPPING.get(key)
-        if not field:
-            continue
-
-        if field == "Church" and value.lower() == "церковь":
-            value = ""
-
-        data[field] = value
+            if key in mapping:
+                data[mapping[key]] = value
 
     return data
 
 
 def format_participant_block(data: Dict) -> str:
     text = (
-        f"👤 **Имя (рус):** {data.get('FullNameRU') or '❌ Не указано'}\n"
-        f"🌍 **Имя (англ):** {data.get('FullNameEN') or '➖ Не указано'}\n"
-        f"⚥ **Пол:** {data.get('Gender')}\n"
-        f"👕 **Размер:** {data.get('Size') or '❌ Не указано'}\n"
-        f"⛪ **Церковь:** {data.get('Church') or '❌ Не указано'}\n"
-        f"👥 **Роль:** {data.get('Role')}"
+        f"Имя (рус): {data.get('FullNameRU') or 'Не указано'}\n"
+        f"Имя (англ): {data.get('FullNameEN') or 'Не указано'}\n"
+        f"Пол: {data.get('Gender')}\n"
+        f"Размер: {data.get('Size') or 'Не указано'}\n"
+        f"Церковь: {data.get('Church') or 'Не указано'}\n"
+        f"Роль: {data.get('Role')}"
     )
     if data.get('Role') == 'TEAM':
-        text += f"\n🏢 **Департамент:** {data.get('Department') or '❌ Не указано (обязательно для TEAM)'}"
+        text += f"\nДепартамент: {data.get('Department') or 'Не указано'}"
     text += (
-        f"\n🏙️ **Город:** {data.get('CountryAndCity') or '➖ Не указано'}\n"
-        f"👨‍💼 **Кто подал:** {data.get('SubmittedBy') or '➖ Не указано'}\n"
-        f"📞 **Контакты:** {data.get('ContactInformation') or '➖ Не указано'}"
+        f"\nГород: {data.get('CountryAndCity') or 'Не указано'}\n"
+        f"Кто подал: {data.get('SubmittedBy') or 'Не указано'}\n"
+        f"Контакты: {data.get('ContactInformation') or 'Не указано'}"
     )
     return text
 
@@ -358,8 +336,9 @@ async def process_participant_confirmation(update: Update, context: ContextTypes
         existing_participant = find_participant_by_name(participant_data['FullNameRU'])
     
     if existing_participant:
-        # Найден дубль
-        context.user_data['parsed_participant'] = participant_data
+        # Найден дубль - объединяем старые и новые данные
+        merged_data = merge_participant_data(existing_participant, participant_data)
+        context.user_data['parsed_participant'] = merged_data
         context.user_data['waiting_for_participant'] = False
         context.user_data['confirming_duplicate'] = True
         
@@ -424,21 +403,21 @@ async def process_participant_confirmation(update: Update, context: ContextTypes
     confirmation_text = f"""
 🔍 **Вот что я понял из ваших данных:**
 
-👤 **Имя (рус):** {participant_data['FullNameRU'] or '❌ Не указано'}
-🌍 **Имя (англ):** {participant_data['FullNameEN'] or '➖ Не указано'}
-⚥ **Пол:** {participant_data['Gender']}
-👕 **Размер:** {participant_data['Size'] or '❌ Не указано'}
-⛪ **Церковь:** {participant_data['Church'] or '❌ Не указано'}
-👥 **Роль:** {participant_data['Role']}"""
+Имя (рус): {participant_data['FullNameRU'] or 'Не указано'}
+Имя (англ): {participant_data['FullNameEN'] or 'Не указано'}
+Пол: {participant_data['Gender']}
+Размер: {participant_data['Size'] or 'Не указано'}
+Церковь: {participant_data['Church'] or 'Не указано'}
+Роль: {participant_data['Role']}"""
 
     # Показываем департамент только для TEAM
     if participant_data['Role'] == 'TEAM':
-        confirmation_text += f"\n🏢 **Департамент:** {participant_data['Department'] or '❌ Не указано (обязательно для TEAM)'}"
+        confirmation_text += f"\nДепартамент: {participant_data['Department'] or 'Не указано'}"
     
     confirmation_text += f"""
-🏙️ **Город:** {participant_data['CountryAndCity'] or '➖ Не указано'}
-👨‍💼 **Кто подал:** {participant_data['SubmittedBy'] or '➖ Не указано'}
-📞 **Контакты:** {participant_data['ContactInformation'] or '➖ Не указано'}
+Город: {participant_data['CountryAndCity'] or 'Не указано'}
+Кто подал: {participant_data['SubmittedBy'] or 'Не указано'}
+Контакты: {participant_data['ContactInformation'] or 'Не указано'}
 
 ✅ **Всё правильно?**
 - Отправьте **ДА** для сохранения
