@@ -22,6 +22,94 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# Сопоставление полей для сообщений об изменениях
+FIELD_LABELS = {
+    'FullNameRU': 'Имя (рус)',
+    'FullNameEN': 'Имя (англ)',
+    'Gender': 'Пол',
+    'Size': 'Размер',
+    'Church': 'Церковь',
+    'Role': 'Роль',
+    'Department': 'Департамент',
+    'CountryAndCity': 'Город',
+    'SubmittedBy': 'Кто подал',
+    'ContactInformation': 'Контакты',
+}
+
+FIELD_EMOJIS = {
+    'FullNameRU': '👤',
+    'FullNameEN': '🌍',
+    'Gender': '⚥',
+    'Size': '👕',
+    'Church': '⛪',
+    'Role': '👥',
+    'Department': '🏢',
+    'CountryAndCity': '🏙️',
+    'SubmittedBy': '👨‍💼',
+    'ContactInformation': '📞',
+}
+
+
+def merge_participant_data(existing_data: Dict, updates: Dict) -> Dict:
+    """Объединяет существующие данные участника с обновлениями"""
+    merged = existing_data.copy()
+    for key, value in updates.items():
+        if value:
+            merged[key] = value
+    return merged
+
+
+def parse_confirmation_template(text: str) -> Dict:
+    """Извлекает данные из скопированного блока подтверждения"""
+    import re
+
+    mapping = {
+        'Имя (рус)': 'FullNameRU',
+        'Имя (англ)': 'FullNameEN',
+        'Пол': 'Gender',
+        'Размер': 'Size',
+        'Церковь': 'Church',
+        'Роль': 'Role',
+        'Департамент': 'Department',
+        'Город': 'CountryAndCity',
+        'Кто подал': 'SubmittedBy',
+        'Контакты': 'ContactInformation',
+    }
+
+    data: Dict = {}
+    for line in text.splitlines():
+        line = line.strip().replace('**', '')
+        line = re.sub(r'^\W+', '', line)
+        for key, field in mapping.items():
+            if key in line:
+                idx = line.find(':')
+                if idx != -1:
+                    value = line[idx + 1:].strip()
+                    if value.startswith('❌') or value.startswith('➖'):
+                        value = ''
+                    data[field] = value
+                break
+    return data
+
+
+def format_participant_block(data: Dict) -> str:
+    text = (
+        f"👤 **Имя (рус):** {data.get('FullNameRU') or '❌ Не указано'}\n"
+        f"🌍 **Имя (англ):** {data.get('FullNameEN') or '➖ Не указано'}\n"
+        f"⚥ **Пол:** {data.get('Gender')}\n"
+        f"👕 **Размер:** {data.get('Size') or '❌ Не указано'}\n"
+        f"⛪ **Церковь:** {data.get('Church') or '❌ Не указано'}\n"
+        f"👥 **Роль:** {data.get('Role')}"
+    )
+    if data.get('Role') == 'TEAM':
+        text += f"\n🏢 **Департамент:** {data.get('Department') or '❌ Не указано (обязательно для TEAM)'}"
+    text += (
+        f"\n🏙️ **Город:** {data.get('CountryAndCity') or '➖ Не указано'}\n"
+        f"👨‍💼 **Кто подал:** {data.get('SubmittedBy') or '➖ Не указано'}\n"
+        f"📞 **Контакты:** {data.get('ContactInformation') or '➖ Не указано'}"
+    )
+    return text
+
 # Функция проверки прав пользователя
 def get_user_role(user_id):
     if user_id in COORDINATOR_IDS:
@@ -212,15 +300,27 @@ async def cancel_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("❌ Все операции отменены.\n\nИспользуйте /help для справки.")
     
 # Обработка и подтверждение данных участника
-async def process_participant_confirmation(update: Update, context: ContextTypes.DEFAULT_TYPE, text: str):
-    is_update = context.user_data.get('confirming_participant')
+async def process_participant_confirmation(update: Update, context: ContextTypes.DEFAULT_TYPE, text: str, is_update: bool = False):
+    """Обрабатывает ввод пользователя на этапе подтверждения."""
 
-    # Парсим данные
-    parsed = parse_participant_data(text, is_update=is_update)
+    # Копия текста подтверждения может приходить обратно от пользователя
+    if text.startswith('🔍') or 'Вот что я понял' in text:
+        parsed = parse_confirmation_template(text)
+        is_update = False
+    else:
+        parsed = parse_participant_data(text, is_update=is_update)
 
-    if is_update:
-        participant_data = context.user_data.get('parsed_participant', {})
-        participant_data.update(parsed)
+    # Определяем, является ли это точечным исправлением
+    partial_update = is_update and 0 < len(parsed) <= 2
+
+    if partial_update:
+        if not parsed:
+            await update.message.reply_text(
+                "Не понял что изменить. Попробуйте: 'Пол женский' или 'Размер M'"
+            )
+            return
+        existing = context.user_data.get('parsed_participant', {})
+        participant_data = merge_participant_data(existing, parsed)
     else:
         participant_data = parsed
     
@@ -263,6 +363,30 @@ async def process_participant_confirmation(update: Update, context: ContextTypes
         """
         
         await update.message.reply_text(duplicate_warning, parse_mode='Markdown')
+        return
+
+    if partial_update:
+        changes = []
+        for field, new_value in parsed.items():
+            old_value = existing.get(field, '')
+            if old_value != new_value:
+                label = FIELD_LABELS.get(field, field)
+                emoji = FIELD_EMOJIS.get(field, '')
+                changes.append(f"{emoji} **{label}:** {old_value or '—'} → {new_value}")
+
+        context.user_data['parsed_participant'] = participant_data
+        context.user_data['waiting_for_participant'] = False
+        context.user_data['confirming_participant'] = True
+
+        confirmation_text = (
+            "🔄 **Исправление данных:**\n\n"
+            "✏️ **Изменено:**\n" + "\n".join(changes) +
+            "\n\n👤 **Итоговые данные:**\n" +
+            format_participant_block(participant_data) +
+            "\n\n✅ Подтвердить изменения?"
+        )
+
+        await update.message.reply_text(confirmation_text, parse_mode='Markdown')
         return
     
     # Дублей нет - показываем обычное подтверждение
@@ -431,7 +555,7 @@ async def handle_participant_confirmation(update: Update, context: ContextTypes.
         
     else:
         # Пользователь прислал новые данные для исправления
-        await process_participant_confirmation(update, context, text)
+        await process_participant_confirmation(update, context, text, is_update=True)
 
 # Обработка ошибок
 async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE):
