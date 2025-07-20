@@ -30,5 +30,16 @@ class ConfirmationTemplateTestCase(unittest.TestCase):
             'Department': ''
         })
 
+    def test_church_parsing(self):
+        text = "\n".join([
+            "👤 **Имя (рус):** Ирина Цой",
+            "⛪ **Церковь:** церковь Грейс",
+        ])
+        data = parse_confirmation_template(text)
+        self.assertEqual(data, {
+            'FullNameRU': 'Ирина Цой',
+            'Church': 'церковь Грейс'
+        })
+
 if __name__ == '__main__':
     unittest.main()
