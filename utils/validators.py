@@ -1,9 +1,17 @@
 from typing import Dict
 
-VALID_SIZES = ['XS', 'S', 'M', 'L', 'XL', 'XXL', '2XL', '3XL']
+VALID_SIZES = [
+    'XS', 'EXTRA SMALL', 'EXTRASMALL',
+    'S', 'SMALL',
+    'M', 'MEDIUM',
+    'L', 'LARGE',
+    'XL', 'EXTRA LARGE', 'EXTRALARGE',
+    'XXL', '2XL', 'EXTRA EXTRA LARGE',
+    '3XL', 'XXXL'
+]
 
 def validate_size(size: str) -> bool:
-    return size.upper() in VALID_SIZES
+    return size.upper() in [s.upper() for s in VALID_SIZES]
 
 
 def validate_participant_data(data: Dict) -> (bool, str):
