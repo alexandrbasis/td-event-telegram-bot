@@ -60,10 +60,10 @@ def merge_participant_data(existing_data: Dict, updates: Dict) -> Dict:
 
 
 def parse_confirmation_template(text: str) -> Dict:
-    """Извлекает данные из скопированного блока подтверждения"""
+    """Извлекает данные из скопированного блока подтверждения."""
     import re
 
-    mapping = {
+    FIELD_MAPPING = {
         'Имя (рус)': 'FullNameRU',
         'Имя (англ)': 'FullNameEN',
         'Пол': 'Gender',
@@ -76,19 +76,35 @@ def parse_confirmation_template(text: str) -> Dict:
         'Контакты': 'ContactInformation',
     }
 
+    prefix_re = re.compile(r'^[🌍👤⚥👕⛪👥🏢🏙️👨‍💼📞\*\s]+(.+)$')
+    kv_re = re.compile(r'^(?P<key>.+?):\s*(?P<value>.+)$')
+
     data: Dict = {}
-    for line in text.splitlines():
-        line = line.strip().replace('**', '')
-        line = re.sub(r'^\W+', '', line)
-        for key, field in mapping.items():
-            if key in line:
-                idx = line.find(':')
-                if idx != -1:
-                    value = line[idx + 1:].strip()
-                    if value.startswith('❌') or value.startswith('➖'):
-                        value = ''
-                    data[field] = value
-                break
+    for raw_line in text.splitlines():
+        line = raw_line.strip()
+        if not line:
+            continue
+
+        line = line.replace('**', '')
+
+        m_pref = prefix_re.match(line)
+        if m_pref:
+            line = m_pref.group(1).strip()
+
+        m_kv = kv_re.match(line)
+        if not m_kv:
+            continue
+
+        key = m_kv.group('key').strip()
+        value = m_kv.group('value').strip()
+
+        if re.search(r'[❌➖]|Не указано', value):
+            value = ''
+
+        field = FIELD_MAPPING.get(key)
+        if field:
+            data[field] = value
+
     return data
 
 
