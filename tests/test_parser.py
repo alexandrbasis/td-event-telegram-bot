@@ -24,5 +24,15 @@ class ParserTestCase(unittest.TestCase):
         self.assertEqual(data['CountryAndCity'], 'Афула')
         self.assertEqual(data['Church'], 'церковь Благодать')
 
+    def test_update_gender_only(self):
+        text = "Пол женский"
+        data = parse_participant_data(text, is_update=True)
+        self.assertEqual(data, {'Gender': 'F'})
+
+    def test_size_medium_synonym(self):
+        text = "размер medium"
+        data = parse_participant_data(text, is_update=True)
+        self.assertEqual(data, {'Size': 'M'})
+
 if __name__ == '__main__':
     unittest.main()

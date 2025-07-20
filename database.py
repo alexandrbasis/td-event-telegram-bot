@@ -156,6 +156,35 @@ def update_participant(participant_id: int, participant_data: Dict) -> bool:
             conn.close()
 
 
+def update_participant_field(participant_id: int, field: str, value: str) -> bool:
+    """Обновляет одно поле участника"""
+    allowed_fields = [
+        'FullNameRU', 'Gender', 'Size', 'CountryAndCity', 'Church',
+        'Role', 'Department', 'FullNameEN', 'SubmittedBy', 'ContactInformation'
+    ]
+
+    if field not in allowed_fields:
+        return False
+
+    conn = None
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+        cursor.execute(
+            f"UPDATE participants SET {field} = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+            (value, participant_id),
+        )
+        updated = cursor.rowcount > 0
+        conn.commit()
+        return updated
+    except sqlite3.Error as e:
+        logger.error("Failed to update participant field: %s", e)
+        return False
+    finally:
+        if conn:
+            conn.close()
+
+
 def find_participant_by_name(full_name_ru: str) -> Optional[Dict]:
     conn = None
     try:
