@@ -156,29 +156,41 @@ def update_participant(participant_id: int, participant_data: Dict) -> bool:
             conn.close()
 
 
-def update_participant_field(participant_id: int, field: str, value: str) -> bool:
-    """Обновляет одно поле участника"""
-    allowed_fields = [
-        'FullNameRU', 'Gender', 'Size', 'CountryAndCity', 'Church',
-        'Role', 'Department', 'FullNameEN', 'SubmittedBy', 'ContactInformation'
-    ]
+VALID_FIELDS = {
+    'FullNameRU', 'Gender', 'Size', 'CountryAndCity', 'Church',
+    'Role', 'Department', 'FullNameEN', 'SubmittedBy', 'ContactInformation'
+}
 
-    if field not in allowed_fields:
+
+def _validate_participant_fields(field_updates: Dict) -> bool:
+    """Check that provided fields are valid columns in the table."""
+    if not field_updates:
         return False
+    return all(field in VALID_FIELDS for field in field_updates.keys())
+
+
+def update_participant_field(participant_id: int, field_updates: Dict) -> bool:
+    """Update specific fields for a participant without touching other data."""
+
+    if not _validate_participant_fields(field_updates):
+        logger.error("Invalid fields for update: %s", list(field_updates.keys()))
+        return False
+
+    set_clause = ", ".join(f"{field} = ?" for field in field_updates.keys())
+    values = list(field_updates.values())
+    values.append(participant_id)
 
     conn = None
     try:
         conn = sqlite3.connect(DB_PATH)
         cursor = conn.cursor()
-        cursor.execute(
-            f"UPDATE participants SET {field} = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
-            (value, participant_id),
-        )
+        query = f"UPDATE participants SET {set_clause}, updated_at = CURRENT_TIMESTAMP WHERE id = ?"
+        cursor.execute(query, values)
         updated = cursor.rowcount > 0
         conn.commit()
         return updated
     except sqlite3.Error as e:
-        logger.error("Failed to update participant field: %s", e)
+        logger.error("Failed to update participant field(s): %s", e)
         return False
     finally:
         if conn:
