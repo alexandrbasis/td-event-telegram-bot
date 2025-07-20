@@ -44,7 +44,9 @@ SIZES = [
 ISRAEL_CITIES = [
     'ХАЙФА', 'HAIFA', 'ТЕЛ-АВИВ', 'TEL AVIV', 'ТЕЛЬ-АВИВ', 'ИЕРУСАЛИМ', 'JERUSALEM',
     'БЕЭР-ШЕВА', 'BEER SHEVA', 'НЕТАНИЯ', 'NETANYA', 'АШДОД', 'ASHDOD',
-    'РИШОН-ЛЕ-ЦИОН', 'RISHON LEZION', 'ПЕТАХ-ТИКВА', 'PETAH TIKVA', 'РЕХОВОТ', 'REHOVOT',
+    'РИШОН-ЛЕ-ЦИОН', 'РИШОН ЛЕ ЦИОН', 'РИШОН-ЛЕ ЦИОН', 'РИШОН ЛЕЦИОН',
+    'RISHON LEZION', 'RISHON-LEZION', 'RISHON LE ZION', 'RISHON-LE ZION',
+    'ПЕТАХ-ТИКВА', 'PETAH TIKVA', 'РЕХОВОТ', 'REHOVOT',
     'БАТ-ЯМ', 'BAT YAM', 'КАРМИЭЛЬ', 'CARMIEL', 'МОДИИН', 'MODIIN', 'НАЗАРЕТ', 'NAZARETH',
     'КИРЬЯТ-ГАТ', 'KIRYAT GAT', 'ЭЙЛАТ', 'EILAT', 'АККО', 'ACRE', 'РАМАТ-ГАН', 'RAMAT GAN',
     'БНЕЙ-БРАК', 'BNEI BRAK', 'ЦФАТ', 'SAFED', 'ТВЕРИЯ', 'TIBERIAS', 'ГЕРЦЛИЯ', 'HERZLIYA',
@@ -96,7 +98,17 @@ def clean_text_from_confirmation_block(text: str) -> str:
     """Удаляет эмодзи и служебные слова из текста подтверждения"""
     cleaned = ''.join(ch for ch in text if not contains_emoji(ch))
     cleaned = cleaned.replace('**', '').replace('*', '')
-    cleaned = cleaned.replace('🔍', '').replace(':', '').replace('•', '')
+    cleaned = cleaned.replace('🔍', '').replace('•', '')
+
+    field_labels = [
+        'Имя (рус)', 'Имя (англ)', 'Пол', 'Размер', 'Церковь',
+        'Роль', 'Департамент', 'Город', 'Кто подал', 'Контакты'
+    ]
+
+    for label in field_labels:
+        cleaned = re.sub(fr'{label}\s*:', '', cleaned, flags=re.IGNORECASE)
+
+    cleaned = cleaned.replace(':', '')
 
     words = cleaned.split()
     filtered = []

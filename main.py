@@ -112,6 +112,18 @@ def format_participant_block(data: Dict) -> str:
     )
     return text
 
+
+def detect_changes(old: Dict, new: Dict) -> List[str]:
+    """Возвращает список человекочитаемых изменений между наборами данных."""
+    changes = []
+    for field, new_value in new.items():
+        old_value = old.get(field, '')
+        if new_value != old_value:
+            label = FIELD_LABELS.get(field, field)
+            emoji = FIELD_EMOJIS.get(field, '')
+            changes.append(f"{emoji} **{label}:** {old_value or '—'} → {new_value}")
+    return changes
+
 # Функция проверки прав пользователя
 def get_user_role(user_id):
     if user_id in COORDINATOR_IDS:
@@ -305,23 +317,17 @@ async def cancel_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def process_participant_confirmation(update: Update, context: ContextTypes.DEFAULT_TYPE, text: str, is_update: bool = False):
     """Обрабатывает ввод пользователя на этапе подтверждения."""
 
-    # Копия текста подтверждения может приходить обратно от пользователя
-    if text.startswith('🔍') or 'Вот что я понял' in text:
+    # Копия текста подтверждения или его части может приходить обратно от пользователя
+    is_block = ('Имя (рус):' in text and 'Пол:' in text)
+    if text.startswith('🔍') or 'Вот что я понял' in text or is_block:
         parsed = parse_confirmation_template(text)
-        is_update = False
     else:
         parsed = parse_participant_data(text, is_update=is_update)
 
-    # Определяем, является ли это точечным исправлением
-    partial_update = is_update and 0 < len(parsed) <= 2
+    # Определяем, является ли это точечным исправлением или массовым обновлением
+    existing = context.user_data.get('parsed_participant', {}) if is_update else {}
 
-    if partial_update:
-        if not parsed:
-            await update.message.reply_text(
-                "Не понял что изменить. Попробуйте: 'Пол женский' или 'Размер M'"
-            )
-            return
-        existing = context.user_data.get('parsed_participant', {})
+    if is_update:
         participant_data = merge_participant_data(existing, parsed)
     else:
         participant_data = parsed
@@ -368,14 +374,13 @@ async def process_participant_confirmation(update: Update, context: ContextTypes
         await update.message.reply_text(duplicate_warning, parse_mode='Markdown')
         return
 
-    if partial_update:
-        changes = []
-        for field, new_value in parsed.items():
-            old_value = existing.get(field, '')
-            if old_value != new_value:
-                label = FIELD_LABELS.get(field, field)
-                emoji = FIELD_EMOJIS.get(field, '')
-                changes.append(f"{emoji} **{label}:** {old_value or '—'} → {new_value}")
+    if is_update:
+        changes = detect_changes(existing, participant_data)
+        if not changes:
+            await update.message.reply_text(
+                "Изменений не обнаружено. Напишите ДА или НЕТ."
+            )
+            return
 
         context.user_data['parsed_participant'] = participant_data
         context.user_data['waiting_for_participant'] = False
@@ -468,6 +473,30 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
 # Обработка подтверждения пользователя
 async def handle_participant_confirmation(update: Update, context: ContextTypes.DEFAULT_TYPE, text: str):
+    # Если пользователь прислал блок подтверждения целиком
+    if "Имя (рус):" in text and "Пол:" in text:
+        parsed = parse_confirmation_template(text)
+        existing = context.user_data.get('parsed_participant', {})
+        participant_data = merge_participant_data(existing, parsed)
+        changes = detect_changes(existing, participant_data)
+        if not changes:
+            await update.message.reply_text(
+                "Изменений не обнаружено. Напишите ДА или НЕТ."
+            )
+            return
+        context.user_data['parsed_participant'] = participant_data
+        confirmation_text = (
+            "🔄 **Исправление данных из блока:**\n\n"
+            "✏️ **Изменено:**\n" + "\n".join(changes) +
+            "\n\n👤 **Итоговые данные:**\n" +
+            format_participant_block(participant_data) +
+            "\n\n✅ **Что делать дальше?**\n"
+            "- Напишите **ДА** или **НЕТ**\n"
+            "- Или пришлите новые исправления"
+        )
+        await update.message.reply_text(confirmation_text, parse_mode='Markdown')
+        return
+
     # Нормализуем текст ответа
     normalized = re.sub(r'[\s\.,!]', '', text.upper())
 
