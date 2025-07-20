@@ -1,4 +1,4 @@
-from typing import Dict
+from typing import Dict, Optional
 import re
 
 GENDER_KEYWORDS = {
@@ -28,7 +28,7 @@ DEPARTMENT_KEYWORDS = {
 }
 
 CHURCH_KEYWORDS = ['ЦЕРКОВЬ', 'CHURCH', 'ХРАМ', 'ОБЩИНА']
-SIZES = ['XS', 'S', 'M', 'L', 'XL', 'XXL', '2XL', '3XL', 'М', 'Л', 'С']
+SIZES = ['XS', 'S', 'M', 'L', 'XL', 'XXL', '2XL', '3XL', 'М', 'Л', 'С', 'MEDIUM', 'LARGE', 'SMALL']
 
 ISRAEL_CITIES = [
     'ХАЙФА', 'HAIFA', 'ТЕЛ-АВИВ', 'TEL AVIV', 'ТЕЛЬ-АВИВ', 'ИЕРУСАЛИМ', 'JERUSALEM',
@@ -40,9 +40,151 @@ ISRAEL_CITIES = [
     'АФУЛА', 'AFULA'
 ]
 
+# Служебные слова, которые встречаются в блоке подтверждения
+CONFIRMATION_NOISE_WORDS = {
+    'ВОТ', 'ЧТО', 'Я', 'ПОНЯЛ', 'ИЗ', 'ВАШИХ', 'ДАННЫХ', 'ИМЯ', 'РУС', 'АНГЛ',
+    'ПОЛ', 'РАЗМЕР', 'ГОРОД', 'КТО', 'ПОДАЛ', 'КОНТАКТЫ', 'НЕ', 'УКАЗАНО', 'РОЛЬ',
+    'ДЕПАРТАМЕНТ', 'ВСЕГО', 'ПРАВИЛЬНО', 'ОТПРАВЬТЕ', 'ДА', 'ДЛЯ', 'СОХРАНЕНИЯ',
+    'НЕТ', 'ОТМЕНЫ', 'ИЛИ', 'ПРИШЛИТЕ', 'ИСПРАВЛЕННЫЕ', 'ПО', 'ТЕМПЛЕЙТУ',
+    'ПОЛНОЙ', 'CANCEL'
+}
+
+# Подсказки для определения поля при исправлении
+FIELD_INDICATORS = {
+    'Gender': ['ПОЛ', 'GENDER'],
+    'Size': ['РАЗМЕР', 'SIZE'],
+    'Role': ['РОЛЬ', 'ROLE'],
+    'Department': ['ДЕПАРТАМЕНТ', 'DEPARTMENT'],
+    'Church': ['ЦЕРКОВЬ', 'CHURCH'],
+    'FullNameRU': ['ИМЯ', 'РУССКИЙ', 'NAME'],
+    'FullNameEN': ['АНГЛИЙСКИЙ', 'ENGLISH', 'АНГЛ'],
+    'CountryAndCity': ['ГОРОД', 'CITY', 'СТРАНА'],
+    'SubmittedBy': ['ПОДАЛ', 'SUBMITTED'],
+    'ContactInformation': ['КОНТАКТ', 'ТЕЛЕФОН', 'EMAIL', 'PHONE']
+}
+
 
 def contains_hebrew(text: str) -> bool:
     return any('\u0590' <= char <= '\u05FF' for char in text)
+
+
+def contains_emoji(text: str) -> bool:
+    """Проверяет наличие эмодзи"""
+    return any(
+        '\U0001F600' <= char <= '\U0001F64F' or  # Emoticons
+        '\U0001F300' <= char <= '\U0001F5FF' or  # Misc Symbols
+        '\U0001F680' <= char <= '\U0001F6FF' or  # Transport & Map
+        '\U0001F1E0' <= char <= '\U0001F1FF' or  # Regional
+        '\U00002600' <= char <= '\U000027BF' or  # Misc
+        '\U0001F900' <= char <= '\U0001F9FF'
+        for char in text
+    )
+
+
+def clean_text_from_confirmation_block(text: str) -> str:
+    """Удаляет эмодзи и служебные слова из текста подтверждения"""
+    cleaned = ''.join(ch for ch in text if not contains_emoji(ch))
+    cleaned = cleaned.replace('**', '').replace('*', '')
+    cleaned = cleaned.replace('🔍', '').replace(':', '').replace('•', '')
+
+    words = cleaned.split()
+    filtered = []
+    for word in words:
+        w = word.strip('.,!?:;').upper()
+        if (
+            w not in CONFIRMATION_NOISE_WORDS and
+            not w.startswith('➖') and
+            not w.startswith('❌') and
+            len(w) > 0
+        ):
+            filtered.append(word)
+
+    return ' '.join(filtered)
+
+
+def detect_field_update_intent(text: str) -> Optional[str]:
+    """Определяет, какое поле хочет обновить пользователь"""
+    text_upper = text.upper()
+    words = re.split(r'\s+', text_upper)
+
+    for field, indicators in FIELD_INDICATORS.items():
+        for ind in indicators:
+            if ind in words:
+                return field
+
+    if any(word in GENDER_KEYWORDS['F'] + GENDER_KEYWORDS['M'] for word in words):
+        return 'Gender'
+
+    if any(word in SIZES for word in words):
+        return 'Size'
+
+    return None
+
+
+def parse_field_update(text: str, field_hint: str) -> Dict:
+    """Парсит исправление конкретного поля"""
+    text_clean = clean_text_from_confirmation_block(text)
+    words = text_clean.split()
+    update: Dict = {}
+
+    if field_hint == 'Gender':
+        for word in words:
+            wu = word.upper()
+            if wu in GENDER_KEYWORDS['F']:
+                update['Gender'] = 'F'
+                break
+            if wu in GENDER_KEYWORDS['M']:
+                update['Gender'] = 'M'
+                break
+
+    elif field_hint == 'Size':
+        for word in words:
+            wu = word.upper()
+            if wu in SIZES:
+                if wu == 'MEDIUM':
+                    update['Size'] = 'M'
+                elif wu == 'LARGE':
+                    update['Size'] = 'L'
+                elif wu == 'SMALL':
+                    update['Size'] = 'S'
+                else:
+                    update['Size'] = wu
+                break
+
+    elif field_hint == 'Role':
+        for word in words:
+            wu = word.upper()
+            if wu in ROLE_KEYWORDS['TEAM']:
+                update['Role'] = 'TEAM'
+                break
+            if wu in ROLE_KEYWORDS['CANDIDATE']:
+                update['Role'] = 'CANDIDATE'
+                break
+
+    elif field_hint == 'Department':
+        for dept, keys in DEPARTMENT_KEYWORDS.items():
+            for word in words:
+                if word.upper() in keys:
+                    update['Department'] = dept
+                    break
+            if 'Department' in update:
+                break
+
+    elif field_hint == 'Church':
+        church_words = []
+        for word in words:
+            if not any(kw in word.upper() for kw in CHURCH_KEYWORDS) and not contains_hebrew(word):
+                church_words.append(word)
+        if church_words:
+            update['Church'] = ' '.join(church_words)
+
+    elif field_hint == 'CountryAndCity':
+        for word in words:
+            if word.upper() in ISRAEL_CITIES:
+                update['CountryAndCity'] = word
+                break
+
+    return update
 
 
 def _extract_submitted_by(text: str, processed_words: set, data: Dict):
@@ -66,45 +208,71 @@ def _extract_contacts(all_words: list, processed_words: set, data: Dict):
 
 
 def _extract_simple_fields(all_words: list, processed_words: set, data: Dict):
+    """Извлекает простые поля с учетом приоритетов"""
     gender_explicit = False
+
+    # Сначала ищем явное указание на женский пол
     for word in all_words:
         if word in processed_words:
             continue
-        word_upper = word.upper()
+        wu = word.upper()
 
-        if word_upper in GENDER_KEYWORDS['F']:
+        if wu in GENDER_KEYWORDS['F']:
             data['Gender'] = 'F'
             gender_explicit = True
             processed_words.add(word)
-            continue
+            break
 
-        if word_upper in GENDER_KEYWORDS['M']:
-            if gender_explicit and data['Gender'] == 'F' and word_upper in SIZES:
-                data['Size'] = word_upper
+    # Затем обрабатываем оставшиеся слова
+    for idx, word in enumerate(all_words):
+        if word in processed_words:
+            continue
+        wu = word.upper()
+
+        if wu in GENDER_KEYWORDS['M'] and not gender_explicit:
+            if wu == 'M' and not data.get('Size'):
+                ctx = []
+                if idx > 0:
+                    ctx.append(all_words[idx - 1].upper())
+                if idx < len(all_words) - 1:
+                    ctx.append(all_words[idx + 1].upper())
+
+                if any('РАЗМЕР' in c or 'SIZE' in c for c in ctx):
+                    data['Size'] = 'M'
+                else:
+                    data['Gender'] = 'M'
             else:
                 data['Gender'] = 'M'
-                gender_explicit = True
             processed_words.add(word)
             continue
 
-        if word_upper in SIZES:
-            data['Size'] = word_upper
+        if wu in SIZES:
+            if wu == 'MEDIUM':
+                data['Size'] = 'M'
+            elif wu == 'LARGE':
+                data['Size'] = 'L'
+            elif wu == 'SMALL':
+                data['Size'] = 'S'
+            else:
+                data['Size'] = wu
             processed_words.add(word)
-        elif any(keyword == word_upper for keyword in ROLE_KEYWORDS['TEAM']):
+
+        elif any(keyword == wu for keyword in ROLE_KEYWORDS['TEAM']):
             data['Role'] = 'TEAM'
             processed_words.add(word)
-        elif any(keyword == word_upper for keyword in ROLE_KEYWORDS['CANDIDATE']):
+        elif any(keyword == wu for keyword in ROLE_KEYWORDS['CANDIDATE']):
             data['Role'] = 'CANDIDATE'
             processed_words.add(word)
         elif not contains_hebrew(word):
             dept_found = False
             for dept, keywords in DEPARTMENT_KEYWORDS.items():
-                if any(keyword == word_upper for keyword in keywords):
+                if any(keyword == wu for keyword in keywords):
                     data['Department'] = dept
                     processed_words.add(word)
                     dept_found = True
                     break
-            if not dept_found and word_upper in ISRAEL_CITIES:
+
+            if not dept_found and wu in ISRAEL_CITIES:
                 data['CountryAndCity'] = word
                 processed_words.add(word)
 
@@ -143,9 +311,16 @@ def _extract_names(all_words: list, processed_words: set, data: Dict):
         data['FullNameEN'] = ' '.join(english_words[:2])
 
 
-def parse_participant_data(text: str) -> Dict:
+def parse_participant_data(text: str, is_update: bool = False) -> Dict:
     """Извлекает данные участника из произвольного текста."""
     text = text.strip()
+
+    if is_update:
+        text = clean_text_from_confirmation_block(text)
+        field_hint = detect_field_update_intent(text)
+        if field_hint:
+            return parse_field_update(text, field_hint)
+
     all_words = text.split()
 
     data = {

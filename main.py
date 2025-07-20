@@ -3,7 +3,15 @@ from typing import List, Dict, Optional
 from telegram import Update
 from telegram.ext import Application, CommandHandler, ContextTypes, MessageHandler, filters
 from config import BOT_TOKEN, BOT_USERNAME, COORDINATOR_IDS, VIEWER_IDS
-from database import init_database, add_participant, get_all_participants, get_participant_by_id, find_participant_by_name, update_participant
+from database import (
+    init_database,
+    add_participant,
+    get_all_participants,
+    get_participant_by_id,
+    find_participant_by_name,
+    update_participant,
+    update_participant_field,
+)
 from parsers.participant_parser import parse_participant_data
 from utils.validators import validate_participant_data
 
@@ -205,15 +213,25 @@ async def cancel_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
 # Обработка и подтверждение данных участника
 async def process_participant_confirmation(update: Update, context: ContextTypes.DEFAULT_TYPE, text: str):
+    is_update = context.user_data.get('confirming_participant')
+
     # Парсим данные
-    participant_data = parse_participant_data(text)
+    parsed = parse_participant_data(text, is_update=is_update)
+
+    if is_update:
+        participant_data = context.user_data.get('parsed_participant', {})
+        participant_data.update(parsed)
+    else:
+        participant_data = parsed
     
     valid, error = validate_participant_data(participant_data)
     if not valid:
         await update.message.reply_text(f"❌ {error}")
         return
-    # Проверяем на дублирование
-    existing_participant = find_participant_by_name(participant_data['FullNameRU'])
+
+    existing_participant = None
+    if not is_update:
+        existing_participant = find_participant_by_name(participant_data['FullNameRU'])
     
     if existing_participant:
         # Найден дубль
