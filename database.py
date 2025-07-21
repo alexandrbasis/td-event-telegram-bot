@@ -52,11 +52,11 @@ def init_database():
                 CREATE TABLE IF NOT EXISTS participants (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     FullNameRU TEXT NOT NULL,
-                    Gender TEXT DEFAULT 'F',
+                    Gender TEXT CHECK (Gender IN ('M', 'F')) DEFAULT 'F',
                     Size TEXT,
                     CountryAndCity TEXT,
                     Church TEXT,
-                    Role TEXT DEFAULT 'CANDIDATE',
+                    Role TEXT CHECK (Role IN ('CANDIDATE', 'TEAM')) DEFAULT 'CANDIDATE',
                     Department TEXT,
                     FullNameEN TEXT,
                     SubmittedBy TEXT,
@@ -72,6 +72,22 @@ def init_database():
                 """
                 CREATE INDEX IF NOT EXISTS Candidates_index_0
                 ON participants (Size, Gender, FullNameRU, Department, Role)
+                """
+            )
+            cursor.execute(
+                """
+                CREATE INDEX IF NOT EXISTS FullNameRU_index
+                ON participants (FullNameRU)
+                """
+            )
+            cursor.execute(
+                """
+                CREATE TRIGGER IF NOT EXISTS check_team_department
+                BEFORE INSERT ON participants
+                WHEN NEW.Role = 'TEAM' AND (NEW.Department IS NULL OR NEW.Department = '')
+                BEGIN
+                    SELECT RAISE(ABORT, 'Department is required for TEAM role');
+                END;
                 """
             )
             print("✅ База данных инициализирована")
