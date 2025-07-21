@@ -2,8 +2,15 @@ import logging
 import re
 from typing import List, Dict, Optional
 from telegram import Update
-from telegram.ext import Application, CommandHandler, ContextTypes, MessageHandler, filters
+from telegram.ext import (
+    Application,
+    CommandHandler,
+    ContextTypes,
+    MessageHandler,
+    filters,
+)
 from config import BOT_TOKEN, BOT_USERNAME, COORDINATOR_IDS, VIEWER_IDS
+from utils.decorators import require_role
 from database import (
     init_database,
     add_participant,
@@ -44,16 +51,10 @@ def get_user_role(user_id):
         return "unauthorized"
 
 # Команда /start
+@require_role("viewer")
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     role = get_user_role(user_id)
-    
-    if role == "unauthorized":
-        await update.message.reply_text(
-            "❌ У вас нет доступа к этому боту.\n"
-            "Обратитесь к координатору для получения прав."
-        )
-        return
     
     welcome_text = f"""
 🏕️ **Добро пожаловать в бот Tres Dias Israel!**
@@ -74,13 +75,10 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(welcome_text, parse_mode='Markdown')
 
 # Команда /help
+@require_role("viewer")
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     role = get_user_role(user_id)
-    
-    if role == "unauthorized":
-        await update.message.reply_text("❌ У вас нет доступа к этому боту.")
-        return
     
     help_text = """
 📖 **Справка по командам:**
@@ -108,13 +106,10 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # Команда /add
 # Команда /add
+@require_role("coordinator")
 async def add_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     role = get_user_role(user_id)
-    
-    if role != "coordinator":
-        await update.message.reply_text("❌ Только координаторы могут добавлять участников.")
-        return
     
     context.user_data['waiting_for_participant'] = True
 
@@ -124,13 +119,10 @@ async def add_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(description_text, parse_mode='Markdown')
     await update.message.reply_text(template_block)
 # Команда /edit
+@require_role("coordinator")
 async def edit_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     role = get_user_role(user_id)
-    
-    if role != "coordinator":
-        await update.message.reply_text("❌ Только координаторы могут редактировать участников.")
-        return
     
     await update.message.reply_text(
         "✏️ **Редактирование участника** (заглушка)\n\n"
@@ -140,13 +132,10 @@ async def edit_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 # Команда /delete
+@require_role("coordinator")
 async def delete_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     role = get_user_role(user_id)
-    
-    if role != "coordinator":
-        await update.message.reply_text("❌ Только координаторы могут удалять участников.")
-        return
     
     await update.message.reply_text(
         "🗑️ **Удаление участника** (заглушка)\n\n"
@@ -156,13 +145,10 @@ async def delete_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 # Команда /list
+@require_role("viewer")
 async def list_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     role = get_user_role(user_id)
-    
-    if role == "unauthorized":
-        await update.message.reply_text("❌ У вас нет доступа к этому боту.")
-        return
     
     # Получаем участников из базы данных
     participants = get_all_participants()
@@ -185,13 +171,10 @@ async def list_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(message, parse_mode='Markdown')
 
 # Команда /export
+@require_role("viewer")
 async def export_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     role = get_user_role(user_id)
-    
-    if role == "unauthorized":
-        await update.message.reply_text("❌ У вас нет доступа к этому боту.")
-        return
     
     await update.message.reply_text(
         "📤 **Экспорт данных** (заглушка)\n\n"
@@ -201,9 +184,12 @@ async def export_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 # Команда /cancel
+@require_role("viewer")
 async def cancel_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data.clear()
-    await update.message.reply_text("❌ Все операции отменены.\n\nИспользуйте /help для справки.")
+    await update.message.reply_text(
+        "❌ Все операции отменены.\n\nИспользуйте /help для справки."
+    )
     
 # Обработка и подтверждение данных участника
 async def process_participant_confirmation(update: Update, context: ContextTypes.DEFAULT_TYPE, text: str, is_update: bool = False):
@@ -305,13 +291,10 @@ async def process_participant_confirmation(update: Update, context: ContextTypes
     await update.message.reply_text(template_text)
 
 # Обработка неизвестных команд и текстовых сообщений
+@require_role("viewer")
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     role = get_user_role(user_id)
-
-    if role == "unauthorized":
-        await update.message.reply_text("❌ У вас нет доступа к этому боту.")
-        return
 
     message_text = update.message.text.strip()
 
