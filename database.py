@@ -6,6 +6,21 @@ DB_PATH = "participants.db"
 logger = logging.getLogger(__name__)
 
 
+def _truncate_fields(data: Dict) -> Dict:
+    """Truncate long text fields to fit DB limits."""
+    result = data.copy()
+    for field, limit in [('FullNameRU', 100), ('FullNameEN', 100), ('Church', 100)]:
+        value = result.get(field)
+        if value and len(value) > limit:
+            logger.warning("%s truncated to %d chars", field, limit)
+            result[field] = value[:limit]
+    contact = result.get('ContactInformation')
+    if contact and len(contact) > 200:
+        logger.warning("ContactInformation truncated to 200 chars")
+        result['ContactInformation'] = contact[:200]
+    return result
+
+
 def init_database():
     """Создание таблицы участников при первом запуске"""
     conn = None
@@ -49,6 +64,7 @@ def init_database():
 
 
 def add_participant(participant_data: Dict) -> int:
+    participant_data = _truncate_fields(participant_data)
     conn = None
     try:
         conn = sqlite3.connect(DB_PATH)
@@ -119,6 +135,7 @@ def get_participant_by_id(participant_id: int) -> Optional[Dict]:
 
 
 def update_participant(participant_id: int, participant_data: Dict) -> bool:
+    participant_data = _truncate_fields(participant_data)
     conn = None
     try:
         conn = sqlite3.connect(DB_PATH)
@@ -176,6 +193,7 @@ def update_participant_field(participant_id: int, field_updates: Dict) -> bool:
         logger.error("Invalid fields for update: %s", list(field_updates.keys()))
         return False
 
+    field_updates = _truncate_fields(field_updates)
     set_clause = ", ".join(f"{field} = ?" for field in field_updates.keys())
     values = list(field_updates.values())
     values.append(participant_id)

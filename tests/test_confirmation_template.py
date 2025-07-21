@@ -1,5 +1,5 @@
 import unittest
-from main import parse_confirmation_template
+from parsers.participant_parser import parse_template_format
 
 class ConfirmationTemplateTestCase(unittest.TestCase):
     def test_basic_parse(self):
@@ -8,7 +8,7 @@ class ConfirmationTemplateTestCase(unittest.TestCase):
             "Пол: F",
             "Размер: M",
         ])
-        data = parse_confirmation_template(text)
+        data = parse_template_format(text)
         self.assertEqual(data, {
             'FullNameRU': 'Ирина Цой',
             'Gender': 'F',
@@ -22,10 +22,12 @@ class ConfirmationTemplateTestCase(unittest.TestCase):
             "Размер: ❌ Не указано",
             "Департамент: ➖ Не указано",
         ])
-        data = parse_confirmation_template(text)
+        data = parse_template_format(text)
         self.assertEqual(data, {
             'FullNameRU': 'Ирина Цой',
-            'Gender': 'F'
+            'Gender': 'F',
+            'Size': '',
+            'Department': ''
         })
 
     def test_church_parsing(self):
@@ -33,7 +35,7 @@ class ConfirmationTemplateTestCase(unittest.TestCase):
             "Имя (рус): Ирина Цой",
             "Церковь: церковь Грейс",
         ])
-        data = parse_confirmation_template(text)
+        data = parse_template_format(text)
         self.assertEqual(data, {
             'FullNameRU': 'Ирина Цой',
             'Church': 'церковь Грейс'
