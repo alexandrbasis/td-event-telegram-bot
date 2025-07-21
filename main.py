@@ -22,6 +22,7 @@ from parsers.participant_parser import (
     parse_participant_data,
     is_template_format,
     parse_template_format,
+    normalize_field_value,
 )
 from services.participant_service import (
     merge_participant_data,
@@ -372,10 +373,16 @@ async def handle_participant_confirmation(
     field_to_edit = context.user_data.get('field_to_edit')
     if field_to_edit:
         new_value = text.strip()
-        context.user_data['parsed_participant'][field_to_edit] = new_value
+        participant_data = context.user_data.get('parsed_participant', {})
+
+        normalized_value = normalize_field_value(field_to_edit, new_value)
+
+        participant_data[field_to_edit] = normalized_value
+
+        context.user_data['parsed_participant'] = participant_data
         context.user_data.pop('field_to_edit')
 
-        await show_confirmation(update, context.user_data['parsed_participant'])
+        await show_confirmation(update, participant_data)
         return CONFIRMING_DATA
     # Если пользователь прислал блок подтверждения целиком
     if is_template_format(text):
