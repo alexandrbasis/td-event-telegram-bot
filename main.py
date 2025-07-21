@@ -365,8 +365,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def handle_participant_confirmation(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
-    text: str,
 ) -> int:
+    text = update.message.text.strip()
     logger.info("User %s confirmation message: %s", update.effective_user.id, text)
 
     field_to_edit = context.user_data.get('field_to_edit')
