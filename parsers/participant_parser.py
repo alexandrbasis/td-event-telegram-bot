@@ -288,12 +288,33 @@ def _extract_contacts(all_words: list, processed_words: set, data: Dict):
     for word in all_words:
         if word in processed_words:
             continue
-        if ('@' in word or
-            (word.startswith(('+', '8', '7')) and len(word) > 5) or
-            (word.replace('+', '').replace('-', '').replace('(', '').replace(')', '').replace(' ', '').isdigit() and len(word) > 7)):
-            data['ContactInformation'] = word
-            processed_words.add(word)
-            break
+
+        # Проверка email
+        if '@' in word and '.' in word.split('@')[-1]:
+            # Простая проверка: есть @ и точка после @
+            if len(word) >= 5:  # минимальная длина email
+                data['ContactInformation'] = word
+                processed_words.add(word)
+                break
+
+        # Проверка телефона
+        # Очищаем от всех не-цифровых символов кроме +
+        cleaned_phone = ''.join(c for c in word if c.isdigit() or c == '+')
+
+        # Считаем количество цифр
+        digit_count = sum(1 for c in cleaned_phone if c.isdigit())
+
+        # Телефон должен содержать минимум 7 цифр
+        if digit_count >= 7:
+            # Проверяем что это похоже на телефон
+            if (
+                word.startswith(('+', '8', '7')) or
+                digit_count >= 10 or  # международный формат
+                (digit_count >= 7 and any(char in word for char in ['-', '(', ')', ' ']))
+            ):
+                data['ContactInformation'] = word
+                processed_words.add(word)
+                break
 
 
 def _extract_simple_fields(all_words: list, processed_words: set, data: Dict):
