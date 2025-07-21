@@ -15,14 +15,9 @@ from telegram.ext import (
 from config import BOT_TOKEN, BOT_USERNAME, COORDINATOR_IDS, VIEWER_IDS
 from utils.decorators import require_role
 from utils.cache import load_reference_data
-from database import (
-    init_database,
-    add_participant,
-    get_all_participants,
-    get_participant_by_id,
-    update_participant,
-    update_participant_field,
-)
+from database import init_database
+from repositories.participant_repository import SqliteParticipantRepository
+from services.participant_service import ParticipantService
 from parsers.participant_parser import (
     parse_participant_data,
     is_template_format,
@@ -32,7 +27,6 @@ from services.participant_service import (
     merge_participant_data,
     format_participant_block,
     detect_changes,
-    check_duplicate,
     get_edit_keyboard,
 )
 from utils.validators import validate_participant_data
@@ -57,6 +51,10 @@ sql_handler.setFormatter(logging.Formatter(LOG_FORMAT))
 sql_logger = logging.getLogger('sql')
 sql_logger.setLevel(logging.INFO)
 sql_logger.addHandler(sql_handler)
+
+# Initialize repository and service instances
+participant_repository = SqliteParticipantRepository()
+participant_service = ParticipantService(repository=participant_repository)
 
 
 # Функция проверки прав пользователя
@@ -196,8 +194,8 @@ async def list_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     role = get_user_role(user_id)
     logger.info("User %s requested participants list", user_id)
     
-    # Получаем участников из базы данных
-    participants = get_all_participants()
+    # Получаем участников из репозитория
+    participants = participant_repository.get_all()
     
     if not participants:
         await update.message.reply_text("📋 **Список участников пуст**\n\nИспользуйте /add для добавления участников.", parse_mode='Markdown')
@@ -272,7 +270,9 @@ async def process_participant_confirmation(
 
     existing_participant = None
     if not is_update:
-        existing_participant = check_duplicate(participant_data['FullNameRU'])
+        existing_participant = await participant_service.check_duplicate(
+            participant_data['FullNameRU']
+        )
     
     if existing_participant:
         # Найден дубль - объединяем старые и новые данные
@@ -417,7 +417,7 @@ async def handle_participant_confirmation(
         if is_positive(normalized):
             # Добавляем как нового участника несмотря на дубль
             try:
-                participant_id = add_participant(participant_data)
+                participant_id = await participant_service.add_participant(participant_data)
             except ValidationError as e:
                 await update.message.reply_text(f"❌ Ошибка валидации: {e}")
                 return ConversationHandler.END
@@ -442,10 +442,10 @@ async def handle_participant_confirmation(
             
         elif normalized in ['ЗАМЕНИТЬ', 'REPLACE', 'ОБНОВИТЬ', 'UPDATE']:
             # Находим существующего участника и обновляем
-            existing = check_duplicate(participant_data['FullNameRU'])
+            existing = await participant_service.check_duplicate(participant_data['FullNameRU'])
             if existing:
                 try:
-                    updated = update_participant(existing['id'], participant_data)
+                    updated = await participant_service.update_participant(existing['id'], participant_data)
                 except ValidationError as e:
                     await update.message.reply_text(f"❌ Ошибка валидации: {e}")
                     return ConversationHandler.END
@@ -494,7 +494,7 @@ async def handle_participant_confirmation(
         participant_data = context.user_data['parsed_participant']
         
         try:
-            participant_id = add_participant(participant_data)
+            participant_id = await participant_service.add_participant(participant_data)
         except ValidationError as e:
             await update.message.reply_text(f"❌ Ошибка валидации: {e}")
             return ConversationHandler.END
