@@ -29,6 +29,7 @@ from services.participant_service import (
     format_participant_block,
     detect_changes,
     get_edit_keyboard,
+    FIELD_LABELS,
 )
 from utils.validators import validate_participant_data
 from utils.exceptions import (
@@ -37,7 +38,7 @@ from utils.exceptions import (
     ValidationError,
 )
 from messages import MESSAGES
-from states import GETTING_DATA, CONFIRMING_DATA, CONFIRMING_DUPLICATE
+from states import CONFIRMING_DATA, CONFIRMING_DUPLICATE, COLLECTING_DATA
 
 # Настройка логирования
 LOG_FORMAT = '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
@@ -56,6 +57,10 @@ sql_logger.addHandler(sql_handler)
 # Initialize repository and service instances
 participant_repository = SqliteParticipantRepository()
 participant_service = ParticipantService(repository=participant_repository)
+
+# --- REQUIRED AND OPTIONAL FIELDS ---
+REQUIRED_FIELDS = ['FullNameRU', 'Gender', 'Size', 'Church', 'Role']
+OPTIONAL_FIELDS = ['FullNameEN', 'CountryAndCity', 'SubmittedBy', 'ContactInformation', 'Department']
 
 
 # Функция проверки прав пользователя
@@ -82,6 +87,36 @@ async def show_confirmation(update: Update, participant_data: Dict) -> None:
         parse_mode='Markdown',
         reply_markup=keyboard,
     )
+
+# --- HELPER FUNCTIONS (NEW) ---
+
+def get_missing_fields(participant_data: Dict) -> List[str]:
+    """Checks for missing required fields."""
+    missing = []
+    for field in REQUIRED_FIELDS:
+        if not participant_data.get(field):
+            missing.append(FIELD_LABELS.get(field, field))
+
+    if participant_data.get('Role') == 'TEAM' and not participant_data.get('Department'):
+        missing.append(FIELD_LABELS.get('Department', 'Department'))
+    return missing
+
+
+def format_status_message(participant_data: Dict) -> str:
+    """Creates a status message with filled data and missing fields."""
+    message = "📝 **Процесс добавления:**\n\n"
+    message += format_participant_block(participant_data)
+    message += "\n\n"
+
+    missing = get_missing_fields(participant_data)
+    if missing:
+        message += "🔴 **Осталось заполнить:**\n- " + "\n- ".join(missing)
+        message += "\n\nОтправьте данные для одного из этих полей или отправьте /cancel для отмены."
+    else:
+        message += "✅ **Все обязательные поля заполнены!**\n\n"
+        message += "Отправьте **ДА** для подтверждения или **НЕТ** для отмены."
+
+    return message
 
 # Команда /start
 @require_role("viewer")
@@ -140,26 +175,62 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(help_text, parse_mode='Markdown')
 
 # Команда /add
-# Команда /add
 @require_role("coordinator")
 async def add_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Starts the /add flow and initializes the session."""
     user_id = update.effective_user.id
-    role = get_user_role(user_id)
     logger.info("User %s started add participant", user_id)
-    
-    description_text = MESSAGES['ADD_DESCRIPTION']
-    template_block = MESSAGES['ADD_TEMPLATE']
 
-    await update.message.reply_text(description_text, parse_mode='Markdown')
-    await update.message.reply_text(template_block)
-    return GETTING_DATA
+    context.user_data['add_flow_data'] = {
+        'FullNameRU': None,
+        'Gender': None,
+        'Size': None,
+        'Church': None,
+        'Role': None,
+        'Department': None,
+        'FullNameEN': None,
+        'CountryAndCity': None,
+        'SubmittedBy': None,
+        'ContactInformation': None,
+    }
+
+    await update.message.reply_text(
+        "🚀 **Начинаем добавлять нового участника.**\n\n"
+        "Пожалуйста, отправляйте данные по одному полю за раз (например, `Церковь Грейс`) или вставьте заполненный шаблон. "
+        "Для отмены введите /cancel.",
+        parse_mode='Markdown'
+    )
+    await update.message.reply_text(MESSAGES['ADD_TEMPLATE'])
+    return COLLECTING_DATA
 
 
 @require_role("coordinator")
-async def get_participant_data(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Получает данные участника от пользователя."""
+async def handle_partial_data(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Collects and processes partial data from the user."""
     text = update.message.text.strip()
-    return await process_participant_confirmation(update, context, text)
+    participant_data = context.user_data.get('add_flow_data', {})
+
+    parsed_update = parse_participant_data(text, is_update=True)
+
+    if is_template_format(text):
+        parsed_update = parse_template_format(text)
+
+    for key, value in parsed_update.items():
+        if value:
+            participant_data[key] = value
+
+    context.user_data['add_flow_data'] = participant_data
+
+    missing_fields = get_missing_fields(participant_data)
+
+    if not missing_fields:
+        context.user_data['parsed_participant'] = participant_data
+        await show_confirmation(update, participant_data)
+        return CONFIRMING_DATA
+    else:
+        status_message = format_status_message(participant_data)
+        await update.message.reply_text(status_message, parse_mode='Markdown')
+        return COLLECTING_DATA
 # Команда /edit
 @require_role("coordinator")
 async def edit_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -232,11 +303,14 @@ async def export_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # Команда /cancel
 @require_role("viewer")
 async def cancel_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    context.user_data.clear()
-    logger.info("User %s cancelled current operation", update.effective_user.id)
-    await update.message.reply_text(
-        "❌ Все операции отменены.\n\nИспользуйте /help для справки."
-    )
+    if 'add_flow_data' in context.user_data:
+        context.user_data.clear()
+        logger.info("User %s cancelled the add flow.", update.effective_user.id)
+        await update.message.reply_text("❌ Добавление отменено.")
+    else:
+        logger.info("User %s cancelled a non-existent operation.", update.effective_user.id)
+        await update.message.reply_text("❌ Нет активной операции для отмены.")
+
     return ConversationHandler.END
     
 # Обработка и подтверждение данных участника
@@ -267,7 +341,7 @@ async def process_participant_confirmation(
     if not valid:
         logger.error("Parsing error: %s | Text: %s", error, text)
         await update.message.reply_text(f"❌ {error}")
-        return GETTING_DATA
+        return COLLECTING_DATA
 
     existing_participant = None
     if not is_update:
@@ -591,7 +665,7 @@ def main():
     add_conv = ConversationHandler(
         entry_points=[CommandHandler("add", add_command)],
         states={
-            GETTING_DATA: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_participant_data)],
+            COLLECTING_DATA: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_partial_data)],
             CONFIRMING_DATA: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, handle_participant_confirmation),
                 CallbackQueryHandler(edit_field_callback, pattern="^edit_")
