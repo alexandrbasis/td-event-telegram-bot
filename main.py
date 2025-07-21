@@ -9,7 +9,6 @@ from database import (
     add_participant,
     get_all_participants,
     get_participant_by_id,
-    find_participant_by_name,
     update_participant,
     update_participant_field,
 )
@@ -18,7 +17,14 @@ from parsers.participant_parser import (
     is_template_format,
     parse_template_format,
 )
+from services.participant_service import (
+    merge_participant_data,
+    format_participant_block,
+    detect_changes,
+    check_duplicate,
+)
 from utils.validators import validate_participant_data
+from messages import MESSAGES
 
 # Настройка логирования
 logging.basicConfig(
@@ -27,106 +33,6 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Сопоставление полей для сообщений об изменениях
-FIELD_LABELS = {
-    'FullNameRU': 'Имя (рус)',
-    'FullNameEN': 'Имя (англ)',
-    'Gender': 'Пол',
-    'Size': 'Размер',
-    'Church': 'Церковь',
-    'Role': 'Роль',
-    'Department': 'Департамент',
-    'CountryAndCity': 'Город',
-    'SubmittedBy': 'Кто подал',
-    'ContactInformation': 'Контакты',
-}
-
-FIELD_EMOJIS = {
-    'FullNameRU': '👤',
-    'FullNameEN': '🌍',
-    'Gender': '⚥',
-    'Size': '👕',
-    'Church': '⛪',
-    'Role': '👥',
-    'Department': '🏢',
-    'CountryAndCity': '🏙️',
-    'SubmittedBy': '👨‍💼',
-    'ContactInformation': '📞',
-}
-
-
-def merge_participant_data(existing_data: Dict, updates: Dict) -> Dict:
-    """Объединяет существующие данные участника с обновлениями"""
-    merged = existing_data.copy()
-    for key, value in updates.items():
-        if value is not None and value != '':
-            merged[key] = value
-    return merged
-
-
-def parse_confirmation_template(text: str) -> Dict:
-    """Парсит простой формат: Ключ: Значение"""
-
-    mapping = {
-        'Имя (рус)': 'FullNameRU',
-        'Имя (англ)': 'FullNameEN',
-        'Пол': 'Gender',
-        'Размер': 'Size',
-        'Церковь': 'Church',
-        'Роль': 'Role',
-        'Департамент': 'Department',
-        'Город': 'CountryAndCity',
-        'Кто подал': 'SubmittedBy',
-        'Контакты': 'ContactInformation',
-    }
-
-    data: Dict = {}
-
-    for line in text.splitlines():
-        line = line.strip()
-        if ':' in line:
-            key, value = line.split(':', 1)
-            key = key.strip()
-            value = value.strip()
-
-            if value in ['➖ Не указано', '❌ Не указано', '']:
-                continue
-
-            if key in mapping:
-                data[mapping[key]] = value
-
-    return data
-
-
-def format_participant_block(data: Dict) -> str:
-    text = (
-        f"Имя (рус): {data.get('FullNameRU') or 'Не указано'}\n"
-        f"Имя (англ): {data.get('FullNameEN') or 'Не указано'}\n"
-        f"Пол: {data.get('Gender')}\n"
-        f"Размер: {data.get('Size') or 'Не указано'}\n"
-        f"Церковь: {data.get('Church') or 'Не указано'}\n"
-        f"Роль: {data.get('Role')}"
-    )
-    if data.get('Role') == 'TEAM':
-        text += f"\nДепартамент: {data.get('Department') or 'Не указано'}"
-    text += (
-        f"\nГород: {data.get('CountryAndCity') or 'Не указано'}\n"
-        f"Кто подал: {data.get('SubmittedBy') or 'Не указано'}\n"
-        f"Контакты: {data.get('ContactInformation') or 'Не указано'}"
-    )
-    return text
-
-
-def detect_changes(old: Dict, new: Dict) -> List[str]:
-    """Возвращает список человекочитаемых изменений между наборами данных."""
-    changes = []
-    for field, new_value in new.items():
-        old_value = old.get(field, '')
-        if new_value != old_value:
-            label = FIELD_LABELS.get(field, field)
-            emoji = FIELD_EMOJIS.get(field, '')
-            changes.append(f"{emoji} **{label}:** {old_value or '—'} → {new_value}")
-    return changes
 
 # Функция проверки прав пользователя
 def get_user_role(user_id):
@@ -212,35 +118,8 @@ async def add_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     context.user_data['waiting_for_participant'] = True
 
-    description_text = (
-        "➕ **Добавление участника**\n\n"
-        "🔴 **ОБЯЗАТЕЛЬНЫЕ ПОЛЯ:**\n"
-        "- Имя (рус) - полное имя на русском языке\n"
-        "- Пол - M/F, муж/жен, мужской/женский\n"
-        "- Размер - XS, S, M, L, XL, XXL\n"
-        "- Церковь - название церкви\n"
-        "- Роль - CANDIDATE/кандидат или TEAM/команда\n"
-        "- Департамент - обязательно для TEAM (Worship, Media, Kitchen и т.д.)\n\n"
-        "🟡 **ОПЦИОНАЛЬНЫЕ ПОЛЯ:**\n"
-        "- Имя (англ) - полное имя на английском\n"
-        "- Город - город проживания\n"
-        "- Кто подал - имя подавшего заявку\n"
-        "- Контакты - телефон или email\n\n"
-        "📝 Ниже готовый шаблон для заполнения ⬇️"
-    )
-
-    template_block = (
-        "Имя (рус): \n"
-        "Имя (англ): \n"
-        "Пол: \n"
-        "Размер: \n"
-        "Церковь: \n"
-        "Роль: \n"
-        "Департамент: \n"
-        "Город: \n"
-        "Кто подал: \n"
-        "Контакты:"
-    )
+    description_text = MESSAGES['ADD_DESCRIPTION']
+    template_block = MESSAGES['ADD_TEMPLATE']
 
     await update.message.reply_text(description_text, parse_mode='Markdown')
     await update.message.reply_text(template_block)
@@ -333,7 +212,7 @@ async def process_participant_confirmation(update: Update, context: ContextTypes
     # Копия текста подтверждения или его части может приходить обратно от пользователя
     is_block = ('Имя (рус):' in text and 'Пол:' in text)
     if text.startswith('🔍') or 'Вот что я понял' in text or is_block:
-        parsed = parse_confirmation_template(text)
+        parsed = parse_template_format(text)
     else:
         parsed = parse_participant_data(text, is_update=is_update)
 
@@ -352,7 +231,7 @@ async def process_participant_confirmation(update: Update, context: ContextTypes
 
     existing_participant = None
     if not is_update:
-        existing_participant = find_participant_by_name(participant_data['FullNameRU'])
+        existing_participant = check_duplicate(participant_data['FullNameRU'])
     
     if existing_participant:
         # Найден дубль - объединяем старые и новые данные
@@ -418,15 +297,7 @@ async def process_participant_confirmation(update: Update, context: ContextTypes
     context.user_data['confirming_participant'] = True
     
     # Готовим два сообщения с распознанными данными
-    intro_text = (
-        "🔍 Вот что удалось распознать\n"
-        "Ниже готовый темплейт с вашими данными ⬇️\n\n"
-        "✅ **Всё правильно?**\n"
-        "- Отправьте **ДА** для сохранения\n"
-        "- Отправьте **НЕТ** для отмены\n"
-        "- Или пришлите исправленный темплейт\n\n"
-        "❌ /cancel для полной отмены"
-    )
+    intro_text = MESSAGES['CONFIRMATION_INTRO']
 
     template_text = format_participant_block(participant_data)
 
@@ -484,15 +355,7 @@ async def handle_participant_confirmation(update: Update, context: ContextTypes.
             )
             return
         context.user_data['parsed_participant'] = participant_data
-        intro_text = (
-            "🔍 Вот что удалось распознать\n"
-            "Ниже готовый темплейт с вашими данными ⬇️\n\n"
-            "✅ **Всё правильно?**\n"
-            "- Отправьте **ДА** для сохранения\n"
-            "- Отправьте **НЕТ** для отмены\n"
-            "- Или пришлите исправленный темплейт\n\n"
-            "❌ /cancel для полной отмены"
-        )
+        intro_text = MESSAGES['CONFIRMATION_INTRO']
         template_text = format_participant_block(participant_data)
         await update.message.reply_text(intro_text, parse_mode='Markdown')
         await update.message.reply_text(template_text)
@@ -535,7 +398,7 @@ async def handle_participant_confirmation(update: Update, context: ContextTypes.
             
         elif normalized in ['ЗАМЕНИТЬ', 'REPLACE', 'ОБНОВИТЬ', 'UPDATE']:
             # Находим существующего участника и обновляем
-            existing = find_participant_by_name(participant_data['FullNameRU'])
+            existing = check_duplicate(participant_data['FullNameRU'])
             if existing:
                 updated = update_participant(existing['id'], participant_data)
                 context.user_data.clear()

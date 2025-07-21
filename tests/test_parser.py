@@ -2,6 +2,7 @@ import unittest
 from parsers.participant_parser import (
     parse_participant_data,
     is_template_format,
+    parse_template_format,
 )
 
 class ParserTestCase(unittest.TestCase):
@@ -81,6 +82,26 @@ class ParserTestCase(unittest.TestCase):
         text4 = "Иван Петров муж L церковь Грейс кандидат 123"
         data4 = parse_participant_data(text4)
         self.assertEqual(data4['ContactInformation'], '')  # 123 слишком короткий
+
+    def test_is_template_format_variants(self):
+        self.assertTrue(is_template_format("Имя (рус): Иван\nПол: M\nЦерковь: XYZ"))
+        self.assertFalse(is_template_format("Просто текст без шаблона"))
+
+    def test_parse_template_partial(self):
+        text = "Имя (рус): Иван Петров\nПол: M\nРазмер:\nЦерковь: Благодать"
+        data = parse_template_format(text)
+        self.assertEqual(data['FullNameRU'], 'Иван Петров')
+        self.assertEqual(data['Gender'], 'M')
+        self.assertEqual(data['Size'], '')
+        self.assertEqual(data['Church'], 'Благодать')
+
+    def test_parse_template_single_line_commas(self):
+        text = "Имя (рус): Иван, Пол: M, Размер: L, Церковь: Благодать"
+        data = parse_template_format(text)
+        self.assertEqual(data['FullNameRU'], 'Иван')
+        self.assertEqual(data['Gender'], 'M')
+        self.assertEqual(data['Size'], 'L')
+        self.assertEqual(data['Church'], 'Благодать')
 
 if __name__ == '__main__':
     unittest.main()

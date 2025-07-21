@@ -1,5 +1,8 @@
 from typing import Dict, Optional
 import re
+import logging
+
+logger = logging.getLogger(__name__)
 
 GENDER_KEYWORDS = {
     'M': ['M', 'МУЖ', 'МУЖСКОЙ', 'MALE', 'М', 'МУЖЧИНА'],
@@ -97,7 +100,9 @@ def is_template_format(text: str) -> bool:
     for field in TEMPLATE_FIELD_MAP.keys():
         if re.search(fr'{re.escape(field)}\s*:', text, re.IGNORECASE):
             count += 1
-    return count >= 3
+    result = count >= 3
+    logger.debug("is_template_format=%s for text: %s", result, text)
+    return result
 
 
 def parse_template_format(text: str) -> Dict:
@@ -114,12 +119,13 @@ def parse_template_format(text: str) -> Dict:
         key, value = item.split(':', 1)
         key = key.strip()
         value = value.strip()
-        if not value:
-            continue
+        if value in ['➖ Не указано', '❌ Не указано']:
+            value = ''
         for ru, eng in TEMPLATE_FIELD_MAP.items():
             if key.lower() == ru.lower():
-                data[eng] = value
+                data[eng] = value or ''
                 break
+    logger.debug("parse_template_format parsed fields: %s", list(data.keys()))
     return data
 
 
@@ -426,12 +432,14 @@ def parse_participant_data(text: str, is_update: bool = False) -> Dict:
     text = text.strip()
 
     if is_template_format(text):
+        logger.debug("Parsing using template format")
         return parse_template_format(text)
 
     if is_update:
         text = clean_text_from_confirmation_block(text)
         field_hint = detect_field_update_intent(text)
         if field_hint:
+            logger.debug("Detected field update intent: %s", field_hint)
             return parse_field_update(text, field_hint)
 
     all_words = text.split()
@@ -456,5 +464,7 @@ def parse_participant_data(text: str, is_update: bool = False) -> Dict:
     _extract_church(all_words, processed_words, data)
     _extract_submitted_by(text, processed_words, data)
     _extract_names(all_words, processed_words, data)
+
+    logger.debug("parse_participant_data result: %s", data)
 
     return data
