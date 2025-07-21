@@ -516,16 +516,16 @@ def normalize_field_value(field_name: str, value: str) -> str:
 
     if field_name == 'Department':
         dept_keywords = cache.get("departments") or {}
-        return _norm_department(value, dept_keywords) or value
+        return _norm_department(value, dept_keywords) or ''
 
     if field_name == 'Gender':
-        return _norm_gender(value) or value
+        return _norm_gender(value) or ''
 
     if field_name == 'Size':
-        return _norm_size(value) or value
+        return _norm_size(value) or ''
 
     if field_name == 'Role':
-        return _norm_role(value) or value
+        return _norm_role(value) or ''
 
     return value
 
