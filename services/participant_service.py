@@ -79,7 +79,12 @@ def detect_changes(old: Dict, new: Dict) -> List[str]:
 
 
 def check_duplicate(full_name_ru: str) -> Optional[Dict]:
-    return find_participant_by_name(full_name_ru)
+    """Проверяет наличие дубликата по имени. Возвращает dict или None."""
+    try:
+        return find_participant_by_name(full_name_ru)
+    except ParticipantNotFoundError:
+        # На случай, если поиск по имени сгенерирует исключение
+        return None
 
 
 class ParticipantService:
