@@ -5,12 +5,11 @@ import logging
 from constants import (
     GENDER_KEYWORDS,
     ROLE_KEYWORDS,
-    DEPARTMENT_KEYWORDS,
     SIZES,
-    ISRAEL_CITIES,
     Gender,
     Role,
 )
+from utils.cache import cache
 
 logger = logging.getLogger(__name__)
 
@@ -197,7 +196,8 @@ def parse_field_update(text: str, field_hint: str) -> Dict:
                 break
 
     elif field_hint == 'Department':
-        for dept, keys in DEPARTMENT_KEYWORDS.items():
+        dept_keywords = cache.get("departments") or {}
+        for dept, keys in dept_keywords.items():
             for word in words:
                 if word.upper() in keys:
                     update['Department'] = dept
@@ -214,8 +214,9 @@ def parse_field_update(text: str, field_hint: str) -> Dict:
             update['Church'] = ' '.join(church_words)
 
     elif field_hint == 'CountryAndCity':
+        cities = cache.get("cities") or []
         for word in words:
-            if word.upper() in ISRAEL_CITIES:
+            if word.upper() in cities:
                 update['CountryAndCity'] = word
                 break
 
@@ -226,6 +227,8 @@ class ParticipantParser:
     def __init__(self):
         self.data: Dict = {}
         self.processed_words: set[str] = set()
+        self.department_keywords = cache.get("departments") or {}
+        self.israel_cities = cache.get("cities") or []
 
     def parse(self, text: str, is_update: bool = False) -> Dict:
         """Основной метод парсинга."""
@@ -293,7 +296,7 @@ class ParticipantParser:
                     if (
                         word_upper not in SIZES and
                         word_upper not in [k for keys in ROLE_KEYWORDS.values() for k in keys] and
-                        word_upper not in [k for keys in DEPARTMENT_KEYWORDS.values() for k in keys]
+                        word_upper not in [k for keys in self.department_keywords.values() for k in keys]
                     ):
                         valid_words.append(word)
                     else:
@@ -384,14 +387,14 @@ class ParticipantParser:
                 self.processed_words.add(word)
             elif not contains_hebrew(word):
                 dept_found = False
-                for dept, keywords in DEPARTMENT_KEYWORDS.items():
+                for dept, keywords in self.department_keywords.items():
                     if any(keyword == wu for keyword in keywords):
                         self.data['Department'] = dept
                         self.processed_words.add(word)
                         dept_found = True
                         break
 
-                if not dept_found and wu in ISRAEL_CITIES:
+                if not dept_found and wu in self.israel_cities:
                     self.data['CountryAndCity'] = word
                     self.processed_words.add(word)
 

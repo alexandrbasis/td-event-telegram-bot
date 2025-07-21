@@ -11,6 +11,7 @@ from telegram.ext import (
 )
 from config import BOT_TOKEN, BOT_USERNAME, COORDINATOR_IDS, VIEWER_IDS
 from utils.decorators import require_role
+from utils.cache import load_reference_data
 from database import (
     init_database,
     add_participant,
@@ -509,6 +510,9 @@ async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE):
 def main():
     # Инициализируем базу данных
     init_database()
+
+    # Загружаем справочники в кэш
+    load_reference_data()
     
     # Создаем приложение
     application = Application.builder().token(BOT_TOKEN).build()

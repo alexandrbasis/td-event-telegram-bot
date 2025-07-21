@@ -4,6 +4,9 @@ from parsers.participant_parser import (
     is_template_format,
     parse_template_format,
 )
+from utils.cache import load_reference_data
+
+load_reference_data()
 
 class ParserTestCase(unittest.TestCase):
     def test_parse_candidate(self):
