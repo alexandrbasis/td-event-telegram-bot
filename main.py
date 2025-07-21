@@ -13,7 +13,11 @@ from database import (
     update_participant,
     update_participant_field,
 )
-from parsers.participant_parser import parse_participant_data
+from parsers.participant_parser import (
+    parse_participant_data,
+    is_template_format,
+    parse_template_format,
+)
 from utils.validators import validate_participant_data
 
 # Настройка логирования
@@ -207,30 +211,39 @@ async def add_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     
     context.user_data['waiting_for_participant'] = True
-    
-    template_text = """
-➕ **Добавление участника**
 
-🔴 **ОБЯЗАТЕЛЬНЫЕ ПОЛЯ:**
-- Полное имя на русском
-- Пол (M/F, муж/жен)
-- Размер одежды (XS, S, M, L, XL, XXL)
-- Церковь
-- Роль (CANDIDATE/кандидат или TEAM/команда)
-- Департамент (только для TEAM): Worship, Media, Kitchen, Setup, ROE, Chapel, Palanka, Administration, Decoration, Bell, Refreshment, Духовенство, Ректорат
+    description_text = (
+        "➕ **Добавление участника**\n\n"
+        "🔴 **ОБЯЗАТЕЛЬНЫЕ ПОЛЯ:**\n"
+        "- Имя (рус) - полное имя на русском языке\n"
+        "- Пол - M/F, муж/жен, мужской/женский\n"
+        "- Размер - XS, S, M, L, XL, XXL\n"
+        "- Церковь - название церкви\n"
+        "- Роль - CANDIDATE/кандидат или TEAM/команда\n"
+        "- Департамент - обязательно для TEAM (Worship, Media, Kitchen и т.д.)\n\n"
+        "🟡 **ОПЦИОНАЛЬНЫЕ ПОЛЯ:**\n"
+        "- Имя (англ) - полное имя на английском\n"
+        "- Город - город проживания\n"
+        "- Кто подал - имя подавшего заявку\n"
+        "- Контакты - телефон или email\n\n"
+        "📝 Ниже готовый шаблон для заполнения ⬇️"
+    )
 
-🟡 **ОПЦИОНАЛЬНЫЕ:**
-- Полное имя на английском
-- Город и страна
-- Кто подал заявку
-- Контактная информация (телефон, email)
+    template_block = (
+        "Имя (рус): \n"
+        "Имя (англ): \n"
+        "Пол: \n"
+        "Размер: \n"
+        "Церковь: \n"
+        "Роль: \n"
+        "Департамент: \n"
+        "Город: \n"
+        "Кто подал: \n"
+        "Контакты:"
+    )
 
-🤖 **Можете писать в любом формате** - бот попытается понять и покажет результат для подтверждения.
-
-❌ /cancel для отмены
-    """
-    
-    await update.message.reply_text(template_text, parse_mode='Markdown')
+    await update.message.reply_text(description_text, parse_mode='Markdown')
+    await update.message.reply_text(template_block)
 # Команда /edit
 async def edit_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
@@ -404,35 +417,21 @@ async def process_participant_confirmation(update: Update, context: ContextTypes
     context.user_data['waiting_for_participant'] = False
     context.user_data['confirming_participant'] = True
     
-    # Формируем сообщение подтверждения
-    confirmation_text = f"""
-🔍 **Вот что я понял из ваших данных:**
+    # Готовим два сообщения с распознанными данными
+    intro_text = (
+        "🔍 Вот что удалось распознать\n"
+        "Ниже готовый темплейт с вашими данными ⬇️\n\n"
+        "✅ **Всё правильно?**\n"
+        "- Отправьте **ДА** для сохранения\n"
+        "- Отправьте **НЕТ** для отмены\n"
+        "- Или пришлите исправленный темплейт\n\n"
+        "❌ /cancel для полной отмены"
+    )
 
-Имя (рус): {participant_data['FullNameRU'] or 'Не указано'}
-Имя (англ): {participant_data['FullNameEN'] or 'Не указано'}
-Пол: {participant_data['Gender']}
-Размер: {participant_data['Size'] or 'Не указано'}
-Церковь: {participant_data['Church'] or 'Не указано'}
-Роль: {participant_data['Role']}"""
+    template_text = format_participant_block(participant_data)
 
-    # Показываем департамент только для TEAM
-    if participant_data['Role'] == 'TEAM':
-        confirmation_text += f"\nДепартамент: {participant_data['Department'] or 'Не указано'}"
-    
-    confirmation_text += f"""
-Город: {participant_data['CountryAndCity'] or 'Не указано'}
-Кто подал: {participant_data['SubmittedBy'] or 'Не указано'}
-Контакты: {participant_data['ContactInformation'] or 'Не указано'}
-
-✅ **Всё правильно?**
-- Отправьте **ДА** для сохранения
-- Отправьте **НЕТ** для отмены
-- Или пришлите исправленные данные по темплейту
-
-❌ /cancel для полной отмены
-    """
-    
-    await update.message.reply_text(confirmation_text, parse_mode='Markdown')
+    await update.message.reply_text(intro_text, parse_mode='Markdown')
+    await update.message.reply_text(template_text)
 
 # Обработка неизвестных команд и текстовых сообщений
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -474,8 +473,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # Обработка подтверждения пользователя
 async def handle_participant_confirmation(update: Update, context: ContextTypes.DEFAULT_TYPE, text: str):
     # Если пользователь прислал блок подтверждения целиком
-    if "Имя (рус):" in text and "Пол:" in text:
-        parsed = parse_confirmation_template(text)
+    if is_template_format(text):
+        parsed = parse_template_format(text)
         existing = context.user_data.get('parsed_participant', {})
         participant_data = merge_participant_data(existing, parsed)
         changes = detect_changes(existing, participant_data)
@@ -485,16 +484,18 @@ async def handle_participant_confirmation(update: Update, context: ContextTypes.
             )
             return
         context.user_data['parsed_participant'] = participant_data
-        confirmation_text = (
-            "🔄 **Исправление данных из блока:**\n\n"
-            "✏️ **Изменено:**\n" + "\n".join(changes) +
-            "\n\n👤 **Итоговые данные:**\n" +
-            format_participant_block(participant_data) +
-            "\n\n✅ **Что делать дальше?**\n"
-            "- Напишите **ДА** или **НЕТ**\n"
-            "- Или пришлите новые исправления"
+        intro_text = (
+            "🔍 Вот что удалось распознать\n"
+            "Ниже готовый темплейт с вашими данными ⬇️\n\n"
+            "✅ **Всё правильно?**\n"
+            "- Отправьте **ДА** для сохранения\n"
+            "- Отправьте **НЕТ** для отмены\n"
+            "- Или пришлите исправленный темплейт\n\n"
+            "❌ /cancel для полной отмены"
         )
-        await update.message.reply_text(confirmation_text, parse_mode='Markdown')
+        template_text = format_participant_block(participant_data)
+        await update.message.reply_text(intro_text, parse_mode='Markdown')
+        await update.message.reply_text(template_text)
         return
 
     # Нормализуем текст ответа
