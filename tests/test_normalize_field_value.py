@@ -15,7 +15,7 @@ class NormalizeFieldValueTestCase(unittest.TestCase):
         self.assertEqual(normalize_field_value('Size', 'большой'), '')
 
     def test_unknown_role(self):
-        self.assertEqual(normalize_field_value('Role', 'работник'), '')
+        self.assertEqual(normalize_field_value('Role', 'работник'), 'CANDIDATE')
 
     def test_known_department_synonym(self):
         self.assertEqual(normalize_field_value('Department', 'админ'), 'Administration')

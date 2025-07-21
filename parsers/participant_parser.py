@@ -525,7 +525,7 @@ def normalize_field_value(field_name: str, value: str) -> str:
         return _norm_size(value) or ''
 
     if field_name == 'Role':
-        return _norm_role(value) or ''
+        return _norm_role(value) or 'CANDIDATE'
 
     return value
 
