@@ -31,6 +31,11 @@ from services.participant_service import (
     check_duplicate,
 )
 from utils.validators import validate_participant_data
+from utils.exceptions import (
+    BotException,
+    ParticipantNotFoundError,
+    ValidationError,
+)
 from messages import MESSAGES
 
 # Настройка логирования
@@ -368,7 +373,20 @@ async def handle_participant_confirmation(update: Update, context: ContextTypes.
 
         if is_positive(normalized):
             # Добавляем как нового участника несмотря на дубль
-            participant_id = add_participant(participant_data)
+            try:
+                participant_id = add_participant(participant_data)
+            except ValidationError as e:
+                await update.message.reply_text(f"❌ Ошибка валидации: {e}")
+                return
+            except ParticipantNotFoundError as e:  # unlikely here
+                await update.message.reply_text(str(e))
+                return
+            except BotException as e:
+                logger.error("Error adding participant: %s", e)
+                await update.message.reply_text(
+                    "❌ Ошибка базы данных при добавлении участника."
+                )
+                return
             context.user_data.clear()
             
             await update.message.reply_text(
@@ -383,7 +401,20 @@ async def handle_participant_confirmation(update: Update, context: ContextTypes.
             # Находим существующего участника и обновляем
             existing = check_duplicate(participant_data['FullNameRU'])
             if existing:
-                updated = update_participant(existing['id'], participant_data)
+                try:
+                    updated = update_participant(existing['id'], participant_data)
+                except ValidationError as e:
+                    await update.message.reply_text(f"❌ Ошибка валидации: {e}")
+                    return
+                except ParticipantNotFoundError as e:
+                    await update.message.reply_text(str(e))
+                    return
+                except BotException as e:
+                    logger.error("Error updating participant: %s", e)
+                    await update.message.reply_text(
+                        "❌ Ошибка базы данных при обновлении участника."
+                    )
+                    return
                 context.user_data.clear()
                 
                 if updated:
@@ -419,7 +450,20 @@ async def handle_participant_confirmation(update: Update, context: ContextTypes.
         # Сохраняем участника
         participant_data = context.user_data['parsed_participant']
         
-        participant_id = add_participant(participant_data)
+        try:
+            participant_id = add_participant(participant_data)
+        except ValidationError as e:
+            await update.message.reply_text(f"❌ Ошибка валидации: {e}")
+            return
+        except ParticipantNotFoundError as e:
+            await update.message.reply_text(str(e))
+            return
+        except BotException as e:
+            logger.error("Error adding participant: %s", e)
+            await update.message.reply_text(
+                "❌ Ошибка базы данных при добавлении участника."
+            )
+            return
         
         # Очищаем состояние
         context.user_data.clear()
