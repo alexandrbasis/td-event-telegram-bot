@@ -22,6 +22,7 @@ from parsers.participant_parser import (
     parse_participant_data,
     is_template_format,
     parse_template_format,
+    parse_unstructured_text,
     normalize_field_value,
 )
 from services.participant_service import (
@@ -210,10 +211,14 @@ async def handle_partial_data(update: Update, context: ContextTypes.DEFAULT_TYPE
     text = update.message.text.strip()
     participant_data = context.user_data.get('add_flow_data', {})
 
-    parsed_update = parse_participant_data(text, is_update=True)
+    parsed_update = {}
 
     if is_template_format(text):
         parsed_update = parse_template_format(text)
+    elif ':' in text:
+        parsed_update = parse_participant_data(text, is_update=True)
+    else:
+        parsed_update = parse_unstructured_text(text)
 
     for key, value in parsed_update.items():
         if value:
