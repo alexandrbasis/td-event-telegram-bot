@@ -262,6 +262,7 @@ def update_participant_field(participant_id: int, field_updates: Dict) -> bool:
 
 
 def find_participant_by_name(full_name_ru: str) -> Optional[Dict]:
+    """Ищет участника по имени. Возвращает dict или None, если не найден."""
     try:
         with DatabaseConnection() as conn:
             cursor = conn.cursor()
@@ -270,13 +271,13 @@ def find_participant_by_name(full_name_ru: str) -> Optional[Dict]:
                 (full_name_ru,),
             )
             row = cursor.fetchone()
+            # Если строка не найдена, просто возвращаем None. Это не ошибка.
             if not row:
-                raise ParticipantNotFoundError(
-                    f"Participant with name '{full_name_ru}' not found"
-                )
+                return None
             return dict(row)
     except sqlite3.Error as e:
         logger.error("Database error while searching participant: %s", e)
+        # В случае реальной ошибки БД, мы по-прежнему генерируем исключение.
         raise BotException("Database error while searching participant") from e
 
 
