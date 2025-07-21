@@ -205,12 +205,12 @@ async def list_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     message = f"📋 **Список участников ({len(participants)} чел.):**\n\n"
     
     for p in participants:
-        role_emoji = "👤" if p['Role'] == 'CANDIDATE' else "👨‍💼"
-        department = f" ({p['Department']})" if p['Department'] else ""
-        
-        message += f"{role_emoji} **{p['FullNameRU']}**\n"
-        message += f"   • Роль: {p['Role']}{department}\n"
-        message += f"   • ID: {p['id']}\n\n"
+        role_emoji = "👤" if p.Role == 'CANDIDATE' else "👨‍💼"
+        department = f" ({p.Department})" if p.Department else ""
+
+        message += f"{role_emoji} **{p.FullNameRU}**\n"
+        message += f"   • Роль: {p.Role}{department}\n"
+        message += f"   • ID: {p.id}\n\n"
     
     await update.message.reply_text(message, parse_mode='Markdown')
 
@@ -283,11 +283,11 @@ async def process_participant_confirmation(
         duplicate_warning = f"""
 ⚠️ **ВНИМАНИЕ: Участник уже существует!**
 
-🆔 **Существующий участник (ID: {existing_participant['id']}):**
-👤 Имя: {existing_participant['FullNameRU']}
-⚥ Пол: {existing_participant['Gender']}
-👥 Роль: {existing_participant['Role']}
-⛪ Церковь: {existing_participant['Church']}
+🆔 **Существующий участник (ID: {existing_participant.id}):**
+👤 Имя: {existing_participant.FullNameRU}
+⚥ Пол: {existing_participant.Gender}
+👥 Роль: {existing_participant.Role}
+⛪ Церковь: {existing_participant.Church}
 
 🔄 **Новые данные:**
 👤 Имя: {participant_data['FullNameRU']}
@@ -445,7 +445,7 @@ async def handle_participant_confirmation(
             existing = await participant_service.check_duplicate(participant_data['FullNameRU'])
             if existing:
                 try:
-                    updated = await participant_service.update_participant(existing['id'], participant_data)
+                    updated = await participant_service.update_participant(existing.id, participant_data)
                 except ValidationError as e:
                     await update.message.reply_text(f"❌ Ошибка валидации: {e}")
                     return ConversationHandler.END
@@ -463,7 +463,7 @@ async def handle_participant_confirmation(
                 if updated:
                     await update.message.reply_text(
                         f"🔄 **Участник обновлен!**\n\n"
-                        f"🆔 ID: {existing['id']}\n"
+                        f"🆔 ID: {existing.id}\n"
                         f"👤 Имя: {participant_data['FullNameRU']}\n"
                         f"👥 Роль: {participant_data['Role']}\n\n"
                         f"📋 Данные заменены новыми значениями",
