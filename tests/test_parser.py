@@ -46,5 +46,19 @@ class ParserTestCase(unittest.TestCase):
         self.assertEqual(data['Size'], 'L')
         self.assertEqual(data['Church'], 'Благодать')
 
+    def test_medium_size_not_in_submitted_by(self):
+        """Тест проверяет, что 'medium' распознается как размер, а не как часть имени подавшего"""
+        text = "Тест Басис тим админ община грейс муж Хайфа от Ирина Цой medium"
+        data = parse_participant_data(text)
+        
+        self.assertEqual(data['FullNameRU'], 'Тест Басис')
+        self.assertEqual(data['Gender'], 'M')
+        self.assertEqual(data['Size'], 'M')  # medium должен стать M
+        self.assertEqual(data['Role'], 'TEAM')
+        self.assertEqual(data['Department'], 'Administration')
+        self.assertEqual(data['Church'], 'община грейс')
+        self.assertEqual(data['CountryAndCity'], 'Хайфа')
+        self.assertEqual(data['SubmittedBy'], 'Ирина Цой')  # без 'medium'
+
 if __name__ == '__main__':
     unittest.main()

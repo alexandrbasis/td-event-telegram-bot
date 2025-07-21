@@ -257,11 +257,31 @@ def parse_field_update(text: str, field_hint: str) -> Dict:
 
 
 def _extract_submitted_by(text: str, processed_words: set, data: Dict):
-    match = re.search(r'от\s+([А-ЯЁA-Z][А-Яа-яёA-Za-z\s]+?)(?:\s*\+|\s*$)', text, re.IGNORECASE)
+    # Ищем паттерн "от Имя Фамилия", но останавливаемся на уже обработанных словах
+    match = re.search(r'от\s+([А-ЯЁA-Z][А-Яа-яёA-Za-z\s]+)', text, re.IGNORECASE)
     if match:
-        data['SubmittedBy'] = match.group(1).strip()
-        for word in match.group(0).split():
-            processed_words.add(word)
+        full_match = match.group(1).strip()
+        words = full_match.split()
+        
+        # Берем только те слова, которые еще не были обработаны
+        valid_words = []
+        for word in words:
+            if word not in processed_words:
+                # Проверяем, что это не ключевое слово размера/роли/департамента
+                word_upper = word.upper()
+                if (word_upper not in SIZES and 
+                    word_upper not in [k for keys in ROLE_KEYWORDS.values() for k in keys] and
+                    word_upper not in [k for keys in DEPARTMENT_KEYWORDS.values() for k in keys]):
+                    valid_words.append(word)
+                else:
+                    break  # Останавливаемся на первом ключевом слове
+        
+        if valid_words:
+            data['SubmittedBy'] = ' '.join(valid_words)
+            # Добавляем в processed_words только валидные слова
+            for word in valid_words:
+                processed_words.add(word)
+            processed_words.add('от')  # Добавляем предлог
 
 
 def _extract_contacts(all_words: list, processed_words: set, data: Dict):
@@ -410,10 +430,10 @@ def parse_participant_data(text: str, is_update: bool = False) -> Dict:
 
     processed_words: set = set()
 
-    _extract_submitted_by(text, processed_words, data)
     _extract_contacts(all_words, processed_words, data)
     _extract_simple_fields(all_words, processed_words, data)
     _extract_church(all_words, processed_words, data)
+    _extract_submitted_by(text, processed_words, data)
     _extract_names(all_words, processed_words, data)
 
     return data
