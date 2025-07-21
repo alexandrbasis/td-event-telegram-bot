@@ -22,6 +22,8 @@ class DatabaseConnection:
     def __enter__(self) -> sqlite3.Connection:
         self.conn = sqlite3.connect(DB_PATH)
         self.conn.row_factory = sqlite3.Row
+        sql_logger = logging.getLogger('sql')
+        self.conn.set_trace_callback(sql_logger.info)
         return self.conn
 
     def __exit__(self, exc_type, exc_val, exc_tb) -> None:
