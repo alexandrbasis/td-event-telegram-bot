@@ -1,4 +1,5 @@
 import logging
+from logging.handlers import RotatingFileHandler
 import re
 from typing import List, Dict, Optional
 from telegram import Update
@@ -40,11 +41,18 @@ from utils.exceptions import (
 from messages import MESSAGES
 
 # Настройка логирования
-logging.basicConfig(
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    level=logging.INFO
-)
+LOG_FORMAT = '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+handler = RotatingFileHandler('bot.log', maxBytes=10*1024*1024, backupCount=5)
+handler.setFormatter(logging.Formatter(LOG_FORMAT))
+logging.basicConfig(level=logging.INFO, handlers=[handler], format=LOG_FORMAT)
 logger = logging.getLogger(__name__)
+
+# Отдельный лог для SQL-запросов
+sql_handler = RotatingFileHandler('sql.log', maxBytes=10*1024*1024, backupCount=5)
+sql_handler.setFormatter(logging.Formatter(LOG_FORMAT))
+sql_logger = logging.getLogger('sql')
+sql_logger.setLevel(logging.INFO)
+sql_logger.addHandler(sql_handler)
 
 
 # Функция проверки прав пользователя
@@ -61,6 +69,7 @@ def get_user_role(user_id):
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     role = get_user_role(user_id)
+    logger.info("User %s started /start", user_id)
     
     welcome_text = f"""
 🏕️ **Добро пожаловать в бот Tres Dias Israel!**
@@ -85,6 +94,7 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     role = get_user_role(user_id)
+    logger.info("User %s requested help", user_id)
     
     help_text = """
 📖 **Справка по командам:**
@@ -116,6 +126,7 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def add_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     role = get_user_role(user_id)
+    logger.info("User %s started add participant", user_id)
     
     context.user_data['waiting_for_participant'] = True
 
@@ -129,6 +140,7 @@ async def add_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def edit_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     role = get_user_role(user_id)
+    logger.info("User %s started edit participant", user_id)
     
     await update.message.reply_text(
         "✏️ **Редактирование участника** (заглушка)\n\n"
@@ -142,6 +154,7 @@ async def edit_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def delete_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     role = get_user_role(user_id)
+    logger.info("User %s started delete participant", user_id)
     
     await update.message.reply_text(
         "🗑️ **Удаление участника** (заглушка)\n\n"
@@ -155,6 +168,7 @@ async def delete_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def list_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     role = get_user_role(user_id)
+    logger.info("User %s requested participants list", user_id)
     
     # Получаем участников из базы данных
     participants = get_all_participants()
@@ -181,6 +195,7 @@ async def list_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def export_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     role = get_user_role(user_id)
+    logger.info("User %s requested export", user_id)
     
     await update.message.reply_text(
         "📤 **Экспорт данных** (заглушка)\n\n"
@@ -193,6 +208,7 @@ async def export_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 @require_role("viewer")
 async def cancel_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data.clear()
+    logger.info("User %s cancelled current operation", update.effective_user.id)
     await update.message.reply_text(
         "❌ Все операции отменены.\n\nИспользуйте /help для справки."
     )
@@ -218,6 +234,7 @@ async def process_participant_confirmation(update: Update, context: ContextTypes
     
     valid, error = validate_participant_data(participant_data)
     if not valid:
+        logger.error("Parsing error: %s | Text: %s", error, text)
         await update.message.reply_text(f"❌ {error}")
         return
 
@@ -301,8 +318,8 @@ async def process_participant_confirmation(update: Update, context: ContextTypes
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     role = get_user_role(user_id)
-
     message_text = update.message.text.strip()
+    logger.info("User %s sent message: %s", user_id, message_text)
 
     # Отладка состояния пользователя
     logger.info(f"User {user_id} state: {context.user_data}")
@@ -332,6 +349,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
 # Обработка подтверждения пользователя
 async def handle_participant_confirmation(update: Update, context: ContextTypes.DEFAULT_TYPE, text: str):
+    logger.info("User %s confirmation message: %s", update.effective_user.id, text)
     # Если пользователь прислал блок подтверждения целиком
     if is_template_format(text):
         parsed = parse_template_format(text)
