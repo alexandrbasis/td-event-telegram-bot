@@ -2,6 +2,12 @@ from typing import Dict, List, Optional
 import logging
 
 from database import find_participant_by_name
+from utils.validators import validate_participant_data
+from utils.exceptions import (
+    DuplicateParticipantError,
+    ParticipantNotFoundError,
+    ValidationError,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -74,3 +80,39 @@ def detect_changes(old: Dict, new: Dict) -> List[str]:
 
 def check_duplicate(full_name_ru: str) -> Optional[Dict]:
     return find_participant_by_name(full_name_ru)
+
+
+class ParticipantService:
+    """Service layer for participant operations."""
+
+    def __init__(self, db_connection):
+        self.db = db_connection
+
+    async def check_duplicate(self, full_name_ru: str) -> Optional[Dict]:
+        """Return participant if exists, otherwise None."""
+        try:
+            return self.db.find_participant_by_name(full_name_ru)
+        except ParticipantNotFoundError:
+            return None
+
+    async def add_participant(self, data: Dict) -> int:
+        """Validate data, check for duplicates and save participant."""
+        valid, error = validate_participant_data(data)
+        if not valid:
+            raise ValidationError(error)
+
+        existing = await self.check_duplicate(data.get("FullNameRU", ""))
+        if existing:
+            raise DuplicateParticipantError(
+                f"Participant '{data.get('FullNameRU')}' already exists"
+            )
+
+        return self.db.add_participant(data)
+
+    async def update_participant(self, participant_id: int, data: Dict) -> bool:
+        """Validate and update participant."""
+        valid, error = validate_participant_data(data)
+        if not valid:
+            raise ValidationError(error)
+
+        return self.db.update_participant(participant_id, data)
