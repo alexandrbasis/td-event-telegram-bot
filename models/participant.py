@@ -3,8 +3,10 @@ from typing import Optional
 
 @dataclass
 class Participant:
-    id: Optional[int] = field(default=None, compare=False)
+    # Required field without a default
     FullNameRU: str
+
+    # Optional fields with defaults
     Gender: str = "F"
     Size: str = ""
     Church: str = ""
@@ -14,3 +16,4 @@ class Participant:
     SubmittedBy: str = ""
     ContactInformation: str = ""
     CountryAndCity: str = ""
+    id: Optional[int] = field(default=None, compare=False)
