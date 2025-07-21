@@ -2,6 +2,13 @@ import sqlite3
 import logging
 from typing import List, Dict, Optional
 
+from utils.exceptions import (
+    BotException,
+    ParticipantNotFoundError,
+    DuplicateParticipantError,
+    ValidationError,
+)
+
 DB_PATH = "participants.db"
 logger = logging.getLogger(__name__)
 
@@ -92,7 +99,7 @@ def init_database():
             )
             print("✅ База данных инициализирована")
     except sqlite3.Error as e:
-        logger.error("Database init error: %s", e)
+        logger.error("Error initializing database: %s", e)
 
 
 def add_participant(participant_data: Dict) -> int:
@@ -105,26 +112,29 @@ def add_participant(participant_data: Dict) -> int:
                 INSERT INTO participants
                 (FullNameRU, Gender, Size, CountryAndCity, Church, Role, Department,
                  FullNameEN, SubmittedBy, ContactInformation)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            (
-                participant_data.get('FullNameRU'),
-                participant_data.get('Gender', 'F'),
-                participant_data.get('Size'),
-                participant_data.get('CountryAndCity'),
-                participant_data.get('Church'),
-                participant_data.get('Role', 'CANDIDATE'),
-                participant_data.get('Department'),
-                participant_data.get('FullNameEN'),
-                participant_data.get('SubmittedBy'),
-                participant_data.get('ContactInformation'),
-            ),
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    participant_data.get('FullNameRU'),
+                    participant_data.get('Gender', 'F'),
+                    participant_data.get('Size'),
+                    participant_data.get('CountryAndCity'),
+                    participant_data.get('Church'),
+                    participant_data.get('Role', 'CANDIDATE'),
+                    participant_data.get('Department'),
+                    participant_data.get('FullNameEN'),
+                    participant_data.get('SubmittedBy'),
+                    participant_data.get('ContactInformation'),
+                ),
             )
             participant_id = cursor.lastrowid
             return participant_id
+    except sqlite3.IntegrityError as e:
+        logger.error("Validation error while adding participant: %s", e)
+        raise ValidationError(str(e)) from e
     except sqlite3.Error as e:
-        logger.error("Failed to add participant: %s", e)
-        return -1
+        logger.error("Database error while adding participant: %s", e)
+        raise BotException("Database error while adding participant") from e
 
 
 def get_all_participants() -> List[Dict]:
@@ -135,20 +145,27 @@ def get_all_participants() -> List[Dict]:
             rows = cursor.fetchall()
             return [dict(row) for row in rows]
     except sqlite3.Error as e:
-        logger.error("Failed to fetch participants: %s", e)
-        return []
+        logger.error("Database error while fetching participants: %s", e)
+        raise BotException("Database error while fetching participants") from e
 
 
 def get_participant_by_id(participant_id: int) -> Optional[Dict]:
     try:
         with DatabaseConnection() as conn:
             cursor = conn.cursor()
-            cursor.execute("SELECT * FROM participants WHERE id = ?", (participant_id,))
+            cursor.execute(
+                "SELECT * FROM participants WHERE id = ?",
+                (participant_id,),
+            )
             row = cursor.fetchone()
-            return dict(row) if row else None
+            if not row:
+                raise ParticipantNotFoundError(
+                    f"Participant with id {participant_id} not found"
+                )
+            return dict(row)
     except sqlite3.Error as e:
-        logger.error("Failed to get participant: %s", e)
-        return None
+        logger.error("Database error while fetching participant: %s", e)
+        raise BotException("Database error while fetching participant") from e
 
 
 def update_participant(participant_id: int, participant_data: Dict) -> bool:
@@ -161,28 +178,34 @@ def update_participant(participant_id: int, participant_data: Dict) -> bool:
                 UPDATE participants SET
                 FullNameRU = ?, Gender = ?, Size = ?, CountryAndCity = ?, Church = ?,
                 Role = ?, Department = ?, FullNameEN = ?, SubmittedBy = ?,
-            ContactInformation = ?, updated_at = CURRENT_TIMESTAMP
-            WHERE id = ?
-            """,
-            (
-                participant_data.get('FullNameRU'),
-                participant_data.get('Gender', 'F'),
-                participant_data.get('Size'),
-                participant_data.get('CountryAndCity'),
-                participant_data.get('Church'),
-                participant_data.get('Role', 'CANDIDATE'),
-                participant_data.get('Department'),
-                participant_data.get('FullNameEN'),
-                participant_data.get('SubmittedBy'),
-                participant_data.get('ContactInformation'),
-                participant_id,
-            ),
+                ContactInformation = ?, updated_at = CURRENT_TIMESTAMP
+                WHERE id = ?
+                """,
+                (
+                    participant_data.get('FullNameRU'),
+                    participant_data.get('Gender', 'F'),
+                    participant_data.get('Size'),
+                    participant_data.get('CountryAndCity'),
+                    participant_data.get('Church'),
+                    participant_data.get('Role', 'CANDIDATE'),
+                    participant_data.get('Department'),
+                    participant_data.get('FullNameEN'),
+                    participant_data.get('SubmittedBy'),
+                    participant_data.get('ContactInformation'),
+                    participant_id,
+                ),
             )
-            updated = cursor.rowcount > 0
-            return updated
+            if cursor.rowcount == 0:
+                raise ParticipantNotFoundError(
+                    f"Participant with id {participant_id} not found"
+                )
+            return True
+    except sqlite3.IntegrityError as e:
+        logger.error("Validation error while updating participant %s: %s", participant_id, e)
+        raise ValidationError(str(e)) from e
     except sqlite3.Error as e:
-        logger.error("Failed to update participant: %s", e)
-        return False
+        logger.error("Database error while updating participant %s: %s", participant_id, e)
+        raise BotException("Database error while updating participant") from e
 
 
 VALID_FIELDS = {
@@ -203,7 +226,7 @@ def update_participant_field(participant_id: int, field_updates: Dict) -> bool:
 
     if not _validate_participant_fields(field_updates):
         logger.error("Invalid fields for update: %s", list(field_updates.keys()))
-        return False
+        raise ValidationError("Invalid fields for update")
 
     field_updates = _truncate_fields(field_updates)
     set_clause = ", ".join(f"{field} = ?" for field in field_updates.keys())
@@ -215,23 +238,44 @@ def update_participant_field(participant_id: int, field_updates: Dict) -> bool:
             cursor = conn.cursor()
             query = f"UPDATE participants SET {set_clause}, updated_at = CURRENT_TIMESTAMP WHERE id = ?"
             cursor.execute(query, values)
-            updated = cursor.rowcount > 0
-            return updated
+            if cursor.rowcount == 0:
+                raise ParticipantNotFoundError(
+                    f"Participant with id {participant_id} not found"
+                )
+            return True
+    except sqlite3.IntegrityError as e:
+        logger.error(
+            "Validation error while updating fields for participant %s: %s",
+            participant_id,
+            e,
+        )
+        raise ValidationError(str(e)) from e
     except sqlite3.Error as e:
-        logger.error("Failed to update participant field(s): %s", e)
-        return False
+        logger.error(
+            "Database error while updating fields for participant %s: %s",
+            participant_id,
+            e,
+        )
+        raise BotException("Database error while updating participant fields") from e
 
 
 def find_participant_by_name(full_name_ru: str) -> Optional[Dict]:
     try:
         with DatabaseConnection() as conn:
             cursor = conn.cursor()
-            cursor.execute("SELECT * FROM participants WHERE FullNameRU = ?", (full_name_ru,))
+            cursor.execute(
+                "SELECT * FROM participants WHERE FullNameRU = ?",
+                (full_name_ru,),
+            )
             row = cursor.fetchone()
-            return dict(row) if row else None
+            if not row:
+                raise ParticipantNotFoundError(
+                    f"Participant with name '{full_name_ru}' not found"
+                )
+            return dict(row)
     except sqlite3.Error as e:
-        logger.error("Failed to find participant: %s", e)
-        return None
+        logger.error("Database error while searching participant: %s", e)
+        raise BotException("Database error while searching participant") from e
 
 
 if __name__ == "__main__":
