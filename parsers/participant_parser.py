@@ -508,3 +508,24 @@ def parse_participant_data(text: str, is_update: bool = False) -> Dict:
     """Извлекает данные участника из произвольного текста."""
     parser = ParticipantParser()
     return parser.parse(text, is_update)
+
+
+def normalize_field_value(field_name: str, value: str) -> str:
+    """Нормализует одно значение для указанного поля."""
+    value = value.strip()
+
+    if field_name == 'Department':
+        dept_keywords = cache.get("departments") or {}
+        return _norm_department(value, dept_keywords) or value
+
+    if field_name == 'Gender':
+        return _norm_gender(value) or value
+
+    if field_name == 'Size':
+        return _norm_size(value) or value
+
+    if field_name == 'Role':
+        return _norm_role(value) or value
+
+    return value
+
