@@ -60,5 +60,27 @@ class ParserTestCase(unittest.TestCase):
         self.assertEqual(data['CountryAndCity'], 'Хайфа')
         self.assertEqual(data['SubmittedBy'], 'Ирина Цой')  # без 'medium'
 
+    def test_contact_validation(self):
+        """Тест проверяет валидацию контактной информации"""
+        # Некорректные контакты не должны распознаваться
+        text1 = "Иван Петров муж L церковь Грейс кандидат Н"
+        data1 = parse_participant_data(text1)
+        self.assertEqual(data1['ContactInformation'], '')  # Н не должно быть контактом
+
+        # Корректные телефоны должны распознаваться
+        text2 = "Иван Петров муж L церковь Грейс кандидат +972501234567"
+        data2 = parse_participant_data(text2)
+        self.assertEqual(data2['ContactInformation'], '+972501234567')
+
+        # Корректные email должны распознаваться
+        text3 = "Иван Петров муж L церковь Грейс кандидат ivan@mail.ru"
+        data3 = parse_participant_data(text3)
+        self.assertEqual(data3['ContactInformation'], 'ivan@mail.ru')
+
+        # Некорректные 'телефоны' не должны распознаваться
+        text4 = "Иван Петров муж L церковь Грейс кандидат 123"
+        data4 = parse_participant_data(text4)
+        self.assertEqual(data4['ContactInformation'], '')  # 123 слишком короткий
+
 if __name__ == '__main__':
     unittest.main()
