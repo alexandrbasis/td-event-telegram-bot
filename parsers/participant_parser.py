@@ -222,209 +222,221 @@ def parse_field_update(text: str, field_hint: str) -> Dict:
     return update
 
 
-def _extract_submitted_by(text: str, processed_words: set, data: Dict):
-    # Ищем паттерн "от Имя Фамилия", но останавливаемся на уже обработанных словах
-    match = re.search(r'от\s+([А-ЯЁA-Z][А-Яа-яёA-Za-z\s]+)', text, re.IGNORECASE)
-    if match:
-        full_match = match.group(1).strip()
-        words = full_match.split()
-        
-        # Берем только те слова, которые еще не были обработаны
-        valid_words = []
-        for word in words:
-            if word not in processed_words:
-                # Проверяем, что это не ключевое слово размера/роли/департамента
-                word_upper = word.upper()
-                if (word_upper not in SIZES and 
-                    word_upper not in [k for keys in ROLE_KEYWORDS.values() for k in keys] and
-                    word_upper not in [k for keys in DEPARTMENT_KEYWORDS.values() for k in keys]):
-                    valid_words.append(word)
-                else:
-                    break  # Останавливаемся на первом ключевом слове
-        
-        if valid_words:
-            data['SubmittedBy'] = ' '.join(valid_words)
-            # Добавляем в processed_words только валидные слова
-            for word in valid_words:
-                processed_words.add(word)
-            processed_words.add('от')  # Добавляем предлог
+class ParticipantParser:
+    def __init__(self):
+        self.data: Dict = {}
+        self.processed_words: set[str] = set()
 
+    def parse(self, text: str, is_update: bool = False) -> Dict:
+        """Основной метод парсинга."""
+        text, early = self._preprocess_text(text, is_update)
+        if early is not None:
+            return early
 
-def _extract_contacts(all_words: list, processed_words: set, data: Dict):
-    for word in all_words:
-        if word in processed_words:
-            continue
+        all_words = text.split()
+        self.data = {
+            'FullNameRU': '',
+            'Gender': 'F',
+            'Size': '',
+            'Church': '',
+            'Role': 'CANDIDATE',
+            'Department': '',
+            'FullNameEN': '',
+            'SubmittedBy': '',
+            'ContactInformation': '',
+            'CountryAndCity': ''
+        }
+        self.processed_words = set()
 
-        # Проверка email
-        if '@' in word and '.' in word.split('@')[-1]:
-            # Простая проверка: есть @ и точка после @
-            if len(word) >= 5:  # минимальная длина email
-                data['ContactInformation'] = word
-                processed_words.add(word)
-                break
+        self._extract_all_fields(all_words, text)
+        self._postprocess_data()
 
-        # Проверка телефона
-        # Очищаем от всех не-цифровых символов кроме +
-        cleaned_phone = ''.join(c for c in word if c.isdigit() or c == '+')
+        logger.debug("ParticipantParser result: %s", self.data)
+        return self.data
 
-        # Считаем количество цифр
-        digit_count = sum(1 for c in cleaned_phone if c.isdigit())
+    def _preprocess_text(self, text: str, is_update: bool) -> tuple[str, Optional[Dict]]:
+        text = text.strip()
+        if is_template_format(text):
+            logger.debug("Parsing using template format")
+            return "", parse_template_format(text)
 
-        # Телефон должен содержать минимум 7 цифр
-        if digit_count >= 7:
-            # Проверяем что это похоже на телефон
-            if (
-                word.startswith(('+', '8', '7')) or
-                digit_count >= 10 or  # международный формат
-                (digit_count >= 7 and any(char in word for char in ['-', '(', ')', ' ']))
-            ):
-                data['ContactInformation'] = word
-                processed_words.add(word)
-                break
+        if is_update:
+            text = clean_text_from_confirmation_block(text)
+            field_hint = detect_field_update_intent(text)
+            if field_hint:
+                logger.debug("Detected field update intent: %s", field_hint)
+                return "", parse_field_update(text, field_hint)
 
+        return text, None
 
-def _extract_simple_fields(all_words: list, processed_words: set, data: Dict):
-    """Извлекает простые поля с учетом приоритетов"""
-    gender_explicit = False
+    def _extract_all_fields(self, all_words: list[str], original_text: str):
+        self._extract_contacts(all_words)
+        self._extract_simple_fields(all_words)
+        self._extract_church(all_words)
+        self._extract_submitted_by(original_text)
+        self._extract_names(all_words)
 
-    # Сначала ищем явное указание на женский пол
-    for word in all_words:
-        if word in processed_words:
-            continue
-        wu = word.upper()
+    def _postprocess_data(self):
+        pass
 
-        if wu in GENDER_KEYWORDS['F']:
-            data['Gender'] = 'F'
-            gender_explicit = True
-            processed_words.add(word)
-            break
+    def _extract_submitted_by(self, text: str):
+        """Извлекает информацию о том, кто подал заявку."""
+        match = re.search(r'от\s+([А-ЯЁA-Z][А-Яа-яёA-Za-z\s]+)', text, re.IGNORECASE)
+        if match:
+            full_match = match.group(1).strip()
+            words = full_match.split()
 
-    # Затем обрабатываем оставшиеся слова
-    for idx, word in enumerate(all_words):
-        if word in processed_words:
-            continue
-        wu = word.upper()
+            valid_words = []
+            for word in words:
+                if word not in self.processed_words:
+                    word_upper = word.upper()
+                    if (
+                        word_upper not in SIZES and
+                        word_upper not in [k for keys in ROLE_KEYWORDS.values() for k in keys] and
+                        word_upper not in [k for keys in DEPARTMENT_KEYWORDS.values() for k in keys]
+                    ):
+                        valid_words.append(word)
+                    else:
+                        break
 
-        if wu in GENDER_KEYWORDS['M'] and not gender_explicit:
-            if wu == 'M' and not data.get('Size'):
-                ctx = []
-                if idx > 0:
-                    ctx.append(all_words[idx - 1].upper())
-                if idx < len(all_words) - 1:
-                    ctx.append(all_words[idx + 1].upper())
+            if valid_words:
+                self.data['SubmittedBy'] = ' '.join(valid_words)
+                for word in valid_words:
+                    self.processed_words.add(word)
+                self.processed_words.add('от')
 
-                if any('РАЗМЕР' in c or 'SIZE' in c for c in ctx):
-                    data['Size'] = 'M'
-                else:
-                    data['Gender'] = 'M'
-            else:
-                data['Gender'] = 'M'
-            processed_words.add(word)
-            continue
+    def _extract_contacts(self, all_words: list[str]):
+        for word in all_words:
+            if word in self.processed_words:
+                continue
 
-        if wu in SIZES:
-            if wu == 'MEDIUM':
-                data['Size'] = 'M'
-            elif wu == 'LARGE':
-                data['Size'] = 'L'
-            elif wu == 'SMALL':
-                data['Size'] = 'S'
-            else:
-                data['Size'] = wu
-            processed_words.add(word)
-
-        elif any(keyword == wu for keyword in ROLE_KEYWORDS['TEAM']):
-            data['Role'] = 'TEAM'
-            processed_words.add(word)
-        elif any(keyword == wu for keyword in ROLE_KEYWORDS['CANDIDATE']):
-            data['Role'] = 'CANDIDATE'
-            processed_words.add(word)
-        elif not contains_hebrew(word):
-            dept_found = False
-            for dept, keywords in DEPARTMENT_KEYWORDS.items():
-                if any(keyword == wu for keyword in keywords):
-                    data['Department'] = dept
-                    processed_words.add(word)
-                    dept_found = True
+            if '@' in word and '.' in word.split('@')[-1]:
+                if len(word) >= 5:
+                    self.data['ContactInformation'] = word
+                    self.processed_words.add(word)
                     break
 
-            if not dept_found and wu in ISRAEL_CITIES:
-                data['CountryAndCity'] = word
-                processed_words.add(word)
+            cleaned_phone = ''.join(c for c in word if c.isdigit() or c == '+')
+            digit_count = sum(1 for c in cleaned_phone if c.isdigit())
 
+            if digit_count >= 7:
+                if (
+                    word.startswith(('+', '8', '7')) or
+                    digit_count >= 10 or
+                    (digit_count >= 7 and any(char in word for char in ['-', '(', ')', ' ']))
+                ):
+                    self.data['ContactInformation'] = word
+                    self.processed_words.add(word)
+                    break
 
-def _extract_church(all_words: list, processed_words: set, data: Dict):
-    for i, word in enumerate(all_words):
-        if word in processed_words:
-            continue
-        word_upper = word.upper()
-        if any(keyword in word_upper for keyword in CHURCH_KEYWORDS):
-            church_words = []
-            if (i > 0 and all_words[i-1] not in processed_words and not contains_hebrew(all_words[i-1])):
-                church_words.append(all_words[i-1])
-                processed_words.add(all_words[i-1])
-            church_words.append(word)
-            processed_words.add(word)
-            if (i < len(all_words) - 1 and all_words[i+1] not in processed_words and not contains_hebrew(all_words[i+1])):
-                church_words.append(all_words[i+1])
-                processed_words.add(all_words[i+1])
-            data['Church'] = ' '.join(church_words)
-            break
+    def _extract_simple_fields(self, all_words: list[str]):
+        """Извлекает простые поля с учетом приоритетов"""
+        gender_explicit = False
 
+        for word in all_words:
+            if word in self.processed_words:
+                continue
+            wu = word.upper()
+            if wu in GENDER_KEYWORDS['F']:
+                self.data['Gender'] = 'F'
+                gender_explicit = True
+                self.processed_words.add(word)
+                break
 
-def _extract_names(all_words: list, processed_words: set, data: Dict):
-    unprocessed = [w for w in all_words if w not in processed_words]
-    russian_words = []
-    english_words = []
-    for word in unprocessed:
-        if word.isalpha() and all(ord(c) < 128 for c in word):
-            english_words.append(word)
-        else:
-            russian_words.append(word)
-    if russian_words:
-        data['FullNameRU'] = ' '.join(russian_words[:2])
-    if english_words:
-        data['FullNameEN'] = ' '.join(english_words[:2])
+        for idx, word in enumerate(all_words):
+            if word in self.processed_words:
+                continue
+            wu = word.upper()
+
+            if wu in GENDER_KEYWORDS['M'] and not gender_explicit:
+                if wu == 'M' and not self.data.get('Size'):
+                    ctx = []
+                    if idx > 0:
+                        ctx.append(all_words[idx - 1].upper())
+                    if idx < len(all_words) - 1:
+                        ctx.append(all_words[idx + 1].upper())
+
+                    if any('РАЗМЕР' in c or 'SIZE' in c for c in ctx):
+                        self.data['Size'] = 'M'
+                    else:
+                        self.data['Gender'] = 'M'
+                else:
+                    self.data['Gender'] = 'M'
+                self.processed_words.add(word)
+                continue
+
+            if wu in SIZES:
+                if wu == 'MEDIUM':
+                    self.data['Size'] = 'M'
+                elif wu == 'LARGE':
+                    self.data['Size'] = 'L'
+                elif wu == 'SMALL':
+                    self.data['Size'] = 'S'
+                else:
+                    self.data['Size'] = wu
+                self.processed_words.add(word)
+
+            elif any(keyword == wu for keyword in ROLE_KEYWORDS['TEAM']):
+                self.data['Role'] = 'TEAM'
+                self.processed_words.add(word)
+            elif any(keyword == wu for keyword in ROLE_KEYWORDS['CANDIDATE']):
+                self.data['Role'] = 'CANDIDATE'
+                self.processed_words.add(word)
+            elif not contains_hebrew(word):
+                dept_found = False
+                for dept, keywords in DEPARTMENT_KEYWORDS.items():
+                    if any(keyword == wu for keyword in keywords):
+                        self.data['Department'] = dept
+                        self.processed_words.add(word)
+                        dept_found = True
+                        break
+
+                if not dept_found and wu in ISRAEL_CITIES:
+                    self.data['CountryAndCity'] = word
+                    self.processed_words.add(word)
+
+    def _extract_church(self, all_words: list[str]):
+        for i, word in enumerate(all_words):
+            if word in self.processed_words:
+                continue
+            word_upper = word.upper()
+            if any(keyword in word_upper for keyword in CHURCH_KEYWORDS):
+                church_words = []
+                if (
+                    i > 0 and
+                    all_words[i - 1] not in self.processed_words and
+                    not contains_hebrew(all_words[i - 1])
+                ):
+                    church_words.append(all_words[i - 1])
+                    self.processed_words.add(all_words[i - 1])
+                church_words.append(word)
+                self.processed_words.add(word)
+                if (
+                    i < len(all_words) - 1 and
+                    all_words[i + 1] not in self.processed_words and
+                    not contains_hebrew(all_words[i + 1])
+                ):
+                    church_words.append(all_words[i + 1])
+                    self.processed_words.add(all_words[i + 1])
+                self.data['Church'] = ' '.join(church_words)
+                break
+
+    def _extract_names(self, all_words: list[str]):
+        unprocessed = [w for w in all_words if w not in self.processed_words]
+        russian_words = []
+        english_words = []
+        for word in unprocessed:
+            if word.isalpha() and all(ord(c) < 128 for c in word):
+                english_words.append(word)
+            else:
+                russian_words.append(word)
+        if russian_words:
+            self.data['FullNameRU'] = ' '.join(russian_words[:2])
+        if english_words:
+            self.data['FullNameEN'] = ' '.join(english_words[:2])
 
 
 def parse_participant_data(text: str, is_update: bool = False) -> Dict:
     """Извлекает данные участника из произвольного текста."""
-    text = text.strip()
-
-    if is_template_format(text):
-        logger.debug("Parsing using template format")
-        return parse_template_format(text)
-
-    if is_update:
-        text = clean_text_from_confirmation_block(text)
-        field_hint = detect_field_update_intent(text)
-        if field_hint:
-            logger.debug("Detected field update intent: %s", field_hint)
-            return parse_field_update(text, field_hint)
-
-    all_words = text.split()
-
-    data = {
-        'FullNameRU': '',
-        'Gender': 'F',
-        'Size': '',
-        'Church': '',
-        'Role': 'CANDIDATE',
-        'Department': '',
-        'FullNameEN': '',
-        'SubmittedBy': '',
-        'ContactInformation': '',
-        'CountryAndCity': ''
-    }
-
-    processed_words: set = set()
-
-    _extract_contacts(all_words, processed_words, data)
-    _extract_simple_fields(all_words, processed_words, data)
-    _extract_church(all_words, processed_words, data)
-    _extract_submitted_by(text, processed_words, data)
-    _extract_names(all_words, processed_words, data)
-
-    logger.debug("parse_participant_data result: %s", data)
-
-    return data
+    parser = ParticipantParser()
+    return parser.parse(text, is_update)
