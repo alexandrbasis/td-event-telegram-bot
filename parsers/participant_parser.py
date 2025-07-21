@@ -1,4 +1,4 @@
-from typing import Dict, Optional
+from typing import Dict, Optional, List
 import re
 import logging
 
@@ -10,6 +10,14 @@ from constants import (
     Role,
 )
 from utils.cache import cache
+from utils.recognizers import (
+    recognize_role,
+    recognize_gender,
+    recognize_size,
+    recognize_department,
+    recognize_church,
+    recognize_city,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -154,6 +162,42 @@ def parse_template_format(text: str) -> Dict:
                 break
     logger.debug("parse_template_format parsed fields: %s", list(data.keys()))
     return data
+
+
+def parse_unstructured_text(text: str) -> Dict[str, str]:
+    """Parses a single unstructured line for known participant fields."""
+    tokens = text.split()
+    participant_data: Dict[str, str] = {}
+    consumed: set[int] = set()
+
+    recognizers = {
+        'Role': recognize_role,
+        'Gender': recognize_gender,
+        'Size': recognize_size,
+        'Department': recognize_department,
+        'Church': recognize_church,
+        'CountryAndCity': recognize_city,
+    }
+
+    # Pass 1: try to recognize tokens
+    for idx, token in enumerate(tokens):
+        if idx in consumed:
+            continue
+        for field, func in recognizers.items():
+            if field in participant_data:
+                continue
+            result = func(token)
+            if result:
+                participant_data[field] = result
+                consumed.add(idx)
+                break
+
+    # Pass 2: remaining tokens are assumed to be the name
+    remaining = [tokens[i] for i in range(len(tokens)) if i not in consumed]
+    if remaining:
+        participant_data['FullNameRU'] = " ".join(t.capitalize() for t in remaining)
+
+    return participant_data
 
 
 def contains_hebrew(text: str) -> bool:

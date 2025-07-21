@@ -3,8 +3,9 @@ from parsers.participant_parser import (
     parse_participant_data,
     is_template_format,
     parse_template_format,
+    parse_unstructured_text,
 )
-from utils.cache import load_reference_data
+from utils.cache import load_reference_data, cache
 
 load_reference_data()
 
@@ -128,6 +129,16 @@ class ParserTestCase(unittest.TestCase):
         ])
         data = parse_participant_data(text)
         self.assertEqual(data['Department'], '')
+
+    def test_unstructured_multi_field(self):
+        cache.set('churches', ['Грейс'])
+        text = "Саша Б тим админ Грейс Хайфа"
+        data = parse_unstructured_text(text)
+        self.assertEqual(data['FullNameRU'], 'Саша Б')
+        self.assertEqual(data['Role'], 'TEAM')
+        self.assertEqual(data['Department'], 'Administration')
+        self.assertEqual(data['Church'], 'Грейс')
+        self.assertEqual(data['CountryAndCity'], 'ХАЙФА')
 
 if __name__ == '__main__':
     unittest.main()
