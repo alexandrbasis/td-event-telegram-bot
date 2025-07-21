@@ -1,5 +1,6 @@
 from typing import Dict, List, Optional
 import logging
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
 from database import find_participant_by_name
 from utils.validators import validate_participant_data
@@ -64,6 +65,33 @@ def format_participant_block(data: Dict) -> str:
         f"Контакты: {data.get('ContactInformation') or 'Не указано'}"
     )
     return text
+
+
+def get_edit_keyboard(participant_data: Dict) -> InlineKeyboardMarkup:
+    """Создает клавиатуру с кнопками для редактирования полей."""
+    buttons = [
+        [
+            InlineKeyboardButton("👤 Имя (рус)", callback_data="edit_FullNameRU"),
+            InlineKeyboardButton("🌍 Имя (англ)", callback_data="edit_FullNameEN"),
+        ],
+        [
+            InlineKeyboardButton("⚥ Пол", callback_data="edit_Gender"),
+            InlineKeyboardButton("👕 Размер", callback_data="edit_Size"),
+        ],
+        [
+            InlineKeyboardButton("⛪ Церковь", callback_data="edit_Church"),
+            InlineKeyboardButton("🏙️ Город", callback_data="edit_CountryAndCity"),
+        ],
+        [
+            InlineKeyboardButton("👥 Роль", callback_data="edit_Role"),
+            InlineKeyboardButton("🏢 Департамент", callback_data="edit_Department"),
+        ],
+        [
+            InlineKeyboardButton("👨‍💼 Кто подал", callback_data="edit_SubmittedBy"),
+            InlineKeyboardButton("📞 Контакты", callback_data="edit_ContactInformation"),
+        ],
+    ]
+    return InlineKeyboardMarkup(buttons)
 
 
 def detect_changes(old: Dict, new: Dict) -> List[str]:

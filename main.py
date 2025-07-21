@@ -9,6 +9,7 @@ from telegram.ext import (
     ContextTypes,
     ConversationHandler,
     MessageHandler,
+    CallbackQueryHandler,
     filters,
 )
 from config import BOT_TOKEN, BOT_USERNAME, COORDINATOR_IDS, VIEWER_IDS
@@ -32,6 +33,7 @@ from services.participant_service import (
     format_participant_block,
     detect_changes,
     check_duplicate,
+    get_edit_keyboard,
 )
 from utils.validators import validate_participant_data
 from utils.exceptions import (
@@ -65,6 +67,22 @@ def get_user_role(user_id):
         return "viewer"
     else:
         return "unauthorized"
+
+
+async def show_confirmation(update: Update, participant_data: Dict) -> None:
+    """Отправляет сообщение с данными участника и клавиатурой для редактирования."""
+    confirmation_text = "🔍 Вот что удалось распознать. Всё правильно?\n\n"
+    confirmation_text += format_participant_block(participant_data)
+    confirmation_text += "\n\n✅ Отправьте **ДА** для сохранения или **НЕТ** для отмены."
+    confirmation_text += "\n\n✏️ **Чтобы исправить поле, нажмите на кнопку ниже.**"
+
+    keyboard = get_edit_keyboard(participant_data)
+
+    await update.message.reply_text(
+        confirmation_text,
+        parse_mode='Markdown',
+        reply_markup=keyboard,
+    )
 
 # Команда /start
 @require_role("viewer")
@@ -298,7 +316,6 @@ async def process_participant_confirmation(
 
         context.user_data['parsed_participant'] = participant_data
         context.user_data['duplicate'] = False
-
         confirmation_text = (
             "🔄 **Исправление данных:**\n\n"
             "✏️ **Изменено:**\n" + "\n".join(changes) +
@@ -306,24 +323,24 @@ async def process_participant_confirmation(
             format_participant_block(participant_data) +
             "\n\n✅ **Что делать дальше?**\n"
             "- Напишите **ДА** или **НЕТ**\n"
-            "- Или пришлите новые исправления"
+            "- Или пришлите новые исправления" +
+            "\n\n✏️ **Чтобы исправить поле, нажмите на кнопку ниже.**"
         )
 
-        await update.message.reply_text(confirmation_text, parse_mode='Markdown')
+        keyboard = get_edit_keyboard(participant_data)
+
+        await update.message.reply_text(
+            confirmation_text,
+            parse_mode='Markdown',
+            reply_markup=keyboard,
+        )
         return CONFIRMING_DATA
     
     # Дублей нет - показываем обычное подтверждение
     context.user_data['parsed_participant'] = participant_data
     context.user_data['duplicate'] = False
     
-    # Готовим два сообщения с распознанными данными
-    intro_text = MESSAGES['CONFIRMATION_INTRO']
-
-    template_text = format_participant_block(participant_data)
-
-    await update.message.reply_text(intro_text, parse_mode='Markdown')
-    await update.message.reply_text(template_text)
-
+    await show_confirmation(update, participant_data)
     return CONFIRMING_DATA
 
 # Обработка неизвестных команд и текстовых сообщений
@@ -351,6 +368,15 @@ async def handle_participant_confirmation(
     text: str,
 ) -> int:
     logger.info("User %s confirmation message: %s", update.effective_user.id, text)
+
+    field_to_edit = context.user_data.get('field_to_edit')
+    if field_to_edit:
+        new_value = text.strip()
+        context.user_data['parsed_participant'][field_to_edit] = new_value
+        context.user_data.pop('field_to_edit')
+
+        await show_confirmation(update, context.user_data['parsed_participant'])
+        return CONFIRMING_DATA
     # Если пользователь прислал блок подтверждения целиком
     if is_template_format(text):
         parsed = parse_template_format(text)
@@ -363,10 +389,7 @@ async def handle_participant_confirmation(
             )
             return CONFIRMING_DATA
         context.user_data['parsed_participant'] = participant_data
-        intro_text = MESSAGES['CONFIRMATION_INTRO']
-        template_text = format_participant_block(participant_data)
-        await update.message.reply_text(intro_text, parse_mode='Markdown')
-        await update.message.reply_text(template_text)
+        await show_confirmation(update, participant_data)
         return CONFIRMING_DATA
 
     # Нормализуем текст ответа
@@ -523,6 +546,22 @@ async def handle_participant_confirmation(
         # Пользователь прислал новые данные для исправления
         return await process_participant_confirmation(update, context, text, is_update=True)
 
+
+async def edit_field_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Обрабатывает нажатие на кнопку редактирования поля."""
+    query = update.callback_query
+    await query.answer()
+
+    field_to_edit = query.data.split('_')[1]
+    context.user_data['field_to_edit'] = field_to_edit
+
+    await query.edit_message_text(
+        text=f"Пришлите новое значение для поля **{field_to_edit}**",
+        parse_mode='Markdown'
+    )
+
+    return CONFIRMING_DATA
+
 # Обработка ошибок
 async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE):
     logger.error(msg="Exception while handling an update:", exc_info=context.error)
@@ -546,7 +585,10 @@ def main():
         entry_points=[CommandHandler("add", add_command)],
         states={
             GETTING_DATA: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_participant_data)],
-            CONFIRMING_DATA: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_participant_confirmation)],
+            CONFIRMING_DATA: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, handle_participant_confirmation),
+                CallbackQueryHandler(edit_field_callback, pattern="^edit_")
+            ],
             CONFIRMING_DUPLICATE: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_participant_confirmation)],
         },
         fallbacks=[CommandHandler("cancel", cancel_command)],
