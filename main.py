@@ -2,6 +2,7 @@ import logging
 from logging.handlers import RotatingFileHandler
 import re
 from typing import List, Dict, Optional
+from dataclasses import asdict
 from telegram import Update
 from telegram.ext import (
     Application,
@@ -244,6 +245,21 @@ async def handle_partial_data(update: Update, context: ContextTypes.DEFAULT_TYPE
             for key, value in parsed_chunk.items():
                 if value:
                     participant_data[key] = value
+
+    # --- NAME DUPLICATE CHECK BLOCK ---
+    newly_identified_name = participant_data.get('FullNameRU')
+    if newly_identified_name and not context.user_data.get('participant_id'):
+        existing_participant = participant_repository.get_by_name(newly_identified_name)
+        if existing_participant:
+            context.user_data['participant_id'] = existing_participant.id
+            existing_dict = asdict(existing_participant)
+            context.user_data['add_flow_data'] = existing_dict
+            context.user_data['parsed_participant'] = existing_dict
+            await update.message.reply_text(
+                f"ℹ️ Участник с именем '{newly_identified_name}' уже существует. Переключаюсь в режим редактирования."
+            )
+            await show_confirmation(update, existing_dict)
+            return CONFIRMING_DATA
 
     context.user_data['add_flow_data'] = participant_data
 
@@ -597,11 +613,14 @@ async def handle_participant_confirmation(
     
     # Обычное подтверждение (без дублей)
     if is_positive(normalized):
-        # Сохраняем участника
-        participant_data = context.user_data['parsed_participant']
-        
+        participant_data = context.user_data.get('parsed_participant', {})
+        participant_id = context.user_data.get('participant_id')
+
         try:
-            participant_id = await participant_service.add_participant(participant_data)
+            if participant_id:
+                await participant_service.update_participant(participant_id, participant_data)
+            else:
+                participant_id = await participant_service.add_participant(participant_data)
         except ValidationError as e:
             await update.message.reply_text(f"❌ Ошибка валидации: {e}")
             return ConversationHandler.END
@@ -609,17 +628,21 @@ async def handle_participant_confirmation(
             await update.message.reply_text(str(e))
             return ConversationHandler.END
         except BotException as e:
-            logger.error("Error adding participant: %s", e)
+            logger.error("Error saving participant: %s", e)
             await update.message.reply_text(
-                "❌ Ошибка базы данных при добавлении участника."
+                "❌ Ошибка базы данных при сохранении участника."
             )
             return ConversationHandler.END
-        
-        # Очищаем состояние
+
+        was_update = bool(context.user_data.get('participant_id'))
         context.user_data.clear()
-        
-        # Формируем полный ответ о добавленном участнике
-        success_text = f"✅ **Участник успешно добавлен!**\n\n🆔 **ID:** {participant_id}\n"
+
+        success_text = (
+            "✅ **Данные участника успешно обновлены!**"
+            if was_update
+            else "✅ **Участник успешно добавлен!**"
+        )
+        success_text += f"\n\n🆔 **ID:** {participant_id}\n"
         success_text += f"👤 **Имя:** {participant_data['FullNameRU']}\n"
         success_text += f"⚥ **Пол:** {participant_data['Gender']}\n"
         success_text += f"👕 **Размер:** {participant_data['Size']}\n"
