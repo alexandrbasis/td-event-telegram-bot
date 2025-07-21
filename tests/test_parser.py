@@ -1,5 +1,8 @@
 import unittest
-from parsers.participant_parser import parse_participant_data
+from parsers.participant_parser import (
+    parse_participant_data,
+    is_template_format,
+)
 
 class ParserTestCase(unittest.TestCase):
     def test_parse_candidate(self):
@@ -33,6 +36,15 @@ class ParserTestCase(unittest.TestCase):
         text = "размер medium"
         data = parse_participant_data(text, is_update=True)
         self.assertEqual(data, {'Size': 'M'})
+
+    def test_template_parsing(self):
+        text = "Имя (рус): Иван Петров, Пол: M, Размер: L, Церковь: Благодать"
+        self.assertTrue(is_template_format(text))
+        data = parse_participant_data(text)
+        self.assertEqual(data['FullNameRU'], 'Иван Петров')
+        self.assertEqual(data['Gender'], 'M')
+        self.assertEqual(data['Size'], 'L')
+        self.assertEqual(data['Church'], 'Благодать')
 
 if __name__ == '__main__':
     unittest.main()

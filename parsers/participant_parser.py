@@ -76,6 +76,52 @@ FIELD_INDICATORS = {
     'ContactInformation': ['КОНТАКТ', 'ТЕЛЕФОН', 'EMAIL', 'PHONE']
 }
 
+# Поля шаблона и их соответствие ключам базы данных
+TEMPLATE_FIELD_MAP = {
+    'Имя (рус)': 'FullNameRU',
+    'Имя (англ)': 'FullNameEN',
+    'Пол': 'Gender',
+    'Размер': 'Size',
+    'Церковь': 'Church',
+    'Роль': 'Role',
+    'Департамент': 'Department',
+    'Город': 'CountryAndCity',
+    'Кто подал': 'SubmittedBy',
+    'Контакты': 'ContactInformation',
+}
+
+
+def is_template_format(text: str) -> bool:
+    """Определяет, похоже ли сообщение на заполненный шаблон."""
+    count = 0
+    for field in TEMPLATE_FIELD_MAP.keys():
+        if re.search(fr'{re.escape(field)}\s*:', text, re.IGNORECASE):
+            count += 1
+    return count >= 3
+
+
+def parse_template_format(text: str) -> Dict:
+    """Парсит текст, оформленный по шаблону Ключ: Значение."""
+    data: Dict = {}
+    # Разделяем по переносу строк и возможным разделителям
+    parts = re.split(r'[\n;]+', text)
+    items = []
+    for part in parts:
+        items.extend(part.split(','))
+    for item in items:
+        if ':' not in item:
+            continue
+        key, value = item.split(':', 1)
+        key = key.strip()
+        value = value.strip()
+        if not value:
+            continue
+        for ru, eng in TEMPLATE_FIELD_MAP.items():
+            if key.lower() == ru.lower():
+                data[eng] = value
+                break
+    return data
+
 
 def contains_hebrew(text: str) -> bool:
     return any('\u0590' <= char <= '\u05FF' for char in text)
@@ -337,6 +383,9 @@ def _extract_names(all_words: list, processed_words: set, data: Dict):
 def parse_participant_data(text: str, is_update: bool = False) -> Dict:
     """Извлекает данные участника из произвольного текста."""
     text = text.strip()
+
+    if is_template_format(text):
+        return parse_template_format(text)
 
     if is_update:
         text = clean_text_from_confirmation_block(text)
