@@ -7,6 +7,7 @@ from telegram.ext import (
     Application,
     CommandHandler,
     ContextTypes,
+    ConversationHandler,
     MessageHandler,
     filters,
 )
@@ -39,7 +40,7 @@ from utils.exceptions import (
     ValidationError,
 )
 from messages import MESSAGES
-from states import ConversationState
+from states import GETTING_DATA, CONFIRMING_DATA, CONFIRMING_DUPLICATE
 
 # Настройка логирования
 LOG_FORMAT = '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
@@ -124,18 +125,24 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # Команда /add
 # Команда /add
 @require_role("coordinator")
-async def add_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def add_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     user_id = update.effective_user.id
     role = get_user_role(user_id)
     logger.info("User %s started add participant", user_id)
     
-    context.user_data[ConversationState.WAITING_FOR_PARTICIPANT] = True
-
     description_text = MESSAGES['ADD_DESCRIPTION']
     template_block = MESSAGES['ADD_TEMPLATE']
 
     await update.message.reply_text(description_text, parse_mode='Markdown')
     await update.message.reply_text(template_block)
+    return GETTING_DATA
+
+
+@require_role("coordinator")
+async def get_participant_data(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Получает данные участника от пользователя."""
+    text = update.message.text.strip()
+    return await process_participant_confirmation(update, context, text)
 # Команда /edit
 @require_role("coordinator")
 async def edit_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -207,15 +214,21 @@ async def export_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # Команда /cancel
 @require_role("viewer")
-async def cancel_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def cancel_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     context.user_data.clear()
     logger.info("User %s cancelled current operation", update.effective_user.id)
     await update.message.reply_text(
         "❌ Все операции отменены.\n\nИспользуйте /help для справки."
     )
+    return ConversationHandler.END
     
 # Обработка и подтверждение данных участника
-async def process_participant_confirmation(update: Update, context: ContextTypes.DEFAULT_TYPE, text: str, is_update: bool = False):
+async def process_participant_confirmation(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    text: str,
+    is_update: bool = False,
+) -> int:
     """Обрабатывает ввод пользователя на этапе подтверждения."""
 
     # Копия текста подтверждения или его части может приходить обратно от пользователя
@@ -237,7 +250,7 @@ async def process_participant_confirmation(update: Update, context: ContextTypes
     if not valid:
         logger.error("Parsing error: %s | Text: %s", error, text)
         await update.message.reply_text(f"❌ {error}")
-        return
+        return GETTING_DATA
 
     existing_participant = None
     if not is_update:
@@ -247,8 +260,7 @@ async def process_participant_confirmation(update: Update, context: ContextTypes
         # Найден дубль - объединяем старые и новые данные
         merged_data = merge_participant_data(existing_participant, participant_data)
         context.user_data['parsed_participant'] = merged_data
-        context.user_data[ConversationState.WAITING_FOR_PARTICIPANT] = False
-        context.user_data[ConversationState.CONFIRMING_DUPLICATE] = True
+        context.user_data['duplicate'] = True
         
         duplicate_warning = f"""
 ⚠️ **ВНИМАНИЕ: Участник уже существует!**
@@ -274,7 +286,7 @@ async def process_participant_confirmation(update: Update, context: ContextTypes
         """
         
         await update.message.reply_text(duplicate_warning, parse_mode='Markdown')
-        return
+        return CONFIRMING_DUPLICATE
 
     if is_update:
         changes = detect_changes(existing, participant_data)
@@ -282,11 +294,10 @@ async def process_participant_confirmation(update: Update, context: ContextTypes
             await update.message.reply_text(
                 "Изменений не обнаружено. Напишите ДА или НЕТ."
             )
-            return
+            return CONFIRMING_DATA
 
         context.user_data['parsed_participant'] = participant_data
-        context.user_data[ConversationState.WAITING_FOR_PARTICIPANT] = False
-        context.user_data[ConversationState.CONFIRMING_PARTICIPANT] = True
+        context.user_data['duplicate'] = False
 
         confirmation_text = (
             "🔄 **Исправление данных:**\n\n"
@@ -299,12 +310,11 @@ async def process_participant_confirmation(update: Update, context: ContextTypes
         )
 
         await update.message.reply_text(confirmation_text, parse_mode='Markdown')
-        return
+        return CONFIRMING_DATA
     
     # Дублей нет - показываем обычное подтверждение
     context.user_data['parsed_participant'] = participant_data
-    context.user_data[ConversationState.WAITING_FOR_PARTICIPANT] = False
-    context.user_data[ConversationState.CONFIRMING_PARTICIPANT] = True
+    context.user_data['duplicate'] = False
     
     # Готовим два сообщения с распознанными данными
     intro_text = MESSAGES['CONFIRMATION_INTRO']
@@ -314,31 +324,17 @@ async def process_participant_confirmation(update: Update, context: ContextTypes
     await update.message.reply_text(intro_text, parse_mode='Markdown')
     await update.message.reply_text(template_text)
 
+    return CONFIRMING_DATA
+
 # Обработка неизвестных команд и текстовых сообщений
 @require_role("viewer")
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
-    role = get_user_role(user_id)
     message_text = update.message.text.strip()
     logger.info("User %s sent message: %s", user_id, message_text)
 
     # Отладка состояния пользователя
     logger.info(f"User {user_id} state: {context.user_data}")
-    
-    # Проверяем режим ожидания данных участника
-    if context.user_data.get(ConversationState.WAITING_FOR_PARTICIPANT):
-        await process_participant_confirmation(update, context, message_text)
-        return
-    
-    # Проверяем режим подтверждения
-    if context.user_data.get(ConversationState.CONFIRMING_PARTICIPANT):
-        await handle_participant_confirmation(update, context, message_text)
-        return
-    
-    # Проверяем режим подтверждения дублей
-    if context.user_data.get(ConversationState.CONFIRMING_DUPLICATE):
-        await handle_participant_confirmation(update, context, message_text)
-        return
     
     # В будущем здесь будет NLP обработка
     await update.message.reply_text(
@@ -349,7 +345,11 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
     
 # Обработка подтверждения пользователя
-async def handle_participant_confirmation(update: Update, context: ContextTypes.DEFAULT_TYPE, text: str):
+async def handle_participant_confirmation(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    text: str,
+) -> int:
     logger.info("User %s confirmation message: %s", update.effective_user.id, text)
     # Если пользователь прислал блок подтверждения целиком
     if is_template_format(text):
@@ -361,13 +361,13 @@ async def handle_participant_confirmation(update: Update, context: ContextTypes.
             await update.message.reply_text(
                 "Изменений не обнаружено. Напишите ДА или НЕТ."
             )
-            return
+            return CONFIRMING_DATA
         context.user_data['parsed_participant'] = participant_data
         intro_text = MESSAGES['CONFIRMATION_INTRO']
         template_text = format_participant_block(participant_data)
         await update.message.reply_text(intro_text, parse_mode='Markdown')
         await update.message.reply_text(template_text)
-        return
+        return CONFIRMING_DATA
 
     # Нормализуем текст ответа
     normalized = re.sub(r'[\s\.,!]', '', text.upper())
@@ -376,7 +376,7 @@ async def handle_participant_confirmation(update: Update, context: ContextTypes.
         await update.message.reply_text(
             "❓ Ответ не распознан. Напишите ДА или НЕТ или пришлите новые данные."
         )
-        return
+        return CONFIRMING_DATA
 
     positive = ['ДА', 'YES', 'Y', 'ОК', 'OK', '+']
     negative = ['НЕТ', 'NO', 'N', '-', 'НИСТ', 'НИТ']
@@ -388,7 +388,7 @@ async def handle_participant_confirmation(update: Update, context: ContextTypes.
         return txt in negative or any(txt.startswith(n) for n in negative)
 
     # Обработка дублей
-    if context.user_data.get(ConversationState.CONFIRMING_DUPLICATE):
+    if context.user_data.get('duplicate'):
         participant_data = context.user_data['parsed_participant']
 
         if is_positive(normalized):
@@ -397,16 +397,16 @@ async def handle_participant_confirmation(update: Update, context: ContextTypes.
                 participant_id = add_participant(participant_data)
             except ValidationError as e:
                 await update.message.reply_text(f"❌ Ошибка валидации: {e}")
-                return
+                return ConversationHandler.END
             except ParticipantNotFoundError as e:  # unlikely here
                 await update.message.reply_text(str(e))
-                return
+                return ConversationHandler.END
             except BotException as e:
                 logger.error("Error adding participant: %s", e)
                 await update.message.reply_text(
                     "❌ Ошибка базы данных при добавлении участника."
                 )
-                return
+                return ConversationHandler.END
             context.user_data.clear()
             
             await update.message.reply_text(
@@ -425,16 +425,16 @@ async def handle_participant_confirmation(update: Update, context: ContextTypes.
                     updated = update_participant(existing['id'], participant_data)
                 except ValidationError as e:
                     await update.message.reply_text(f"❌ Ошибка валидации: {e}")
-                    return
+                    return ConversationHandler.END
                 except ParticipantNotFoundError as e:
                     await update.message.reply_text(str(e))
-                    return
+                    return ConversationHandler.END
                 except BotException as e:
                     logger.error("Error updating participant: %s", e)
                     await update.message.reply_text(
                         "❌ Ошибка базы данных при обновлении участника."
                     )
-                    return
+                    return ConversationHandler.END
                 context.user_data.clear()
                 
                 if updated:
@@ -463,7 +463,7 @@ async def handle_participant_confirmation(update: Update, context: ContextTypes.
                 "• **НЕТ** - отменить\n"
                 "• **ЗАМЕНИТЬ** - обновить существующего"
             )
-        return
+        return CONFIRMING_DUPLICATE
     
     # Обычное подтверждение (без дублей)
     if is_positive(normalized):
@@ -474,16 +474,16 @@ async def handle_participant_confirmation(update: Update, context: ContextTypes.
             participant_id = add_participant(participant_data)
         except ValidationError as e:
             await update.message.reply_text(f"❌ Ошибка валидации: {e}")
-            return
+            return ConversationHandler.END
         except ParticipantNotFoundError as e:
             await update.message.reply_text(str(e))
-            return
+            return ConversationHandler.END
         except BotException as e:
             logger.error("Error adding participant: %s", e)
             await update.message.reply_text(
                 "❌ Ошибка базы данных при добавлении участника."
             )
-            return
+            return ConversationHandler.END
         
         # Очищаем состояние
         context.user_data.clear()
@@ -508,7 +508,8 @@ async def handle_participant_confirmation(update: Update, context: ContextTypes.
         success_text += f"\n📋 Используйте /list для просмотра всех участников"
 
         await update.message.reply_text(success_text, parse_mode='Markdown')
-        
+        return ConversationHandler.END
+
     elif is_negative(normalized):
         # Отменяем добавление
         context.user_data.clear()
@@ -516,10 +517,11 @@ async def handle_participant_confirmation(update: Update, context: ContextTypes.
             "❌ Добавление участника отменено.\n\n"
             "Используйте /add для повторной попытки."
         )
-        
+        return ConversationHandler.END
+
     else:
         # Пользователь прислал новые данные для исправления
-        await process_participant_confirmation(update, context, text, is_update=True)
+        return await process_participant_confirmation(update, context, text, is_update=True)
 
 # Обработка ошибок
 async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE):
@@ -539,7 +541,18 @@ def main():
     # Регистрируем обработчики команд
     application.add_handler(CommandHandler("start", start_command))
     application.add_handler(CommandHandler("help", help_command))
-    application.add_handler(CommandHandler("add", add_command))
+
+    add_conv = ConversationHandler(
+        entry_points=[CommandHandler("add", add_command)],
+        states={
+            GETTING_DATA: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_participant_data)],
+            CONFIRMING_DATA: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_participant_confirmation)],
+            CONFIRMING_DUPLICATE: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_participant_confirmation)],
+        },
+        fallbacks=[CommandHandler("cancel", cancel_command)],
+    )
+
+    application.add_handler(add_conv)
     application.add_handler(CommandHandler("edit", edit_command))
     application.add_handler(CommandHandler("delete", delete_command))
     application.add_handler(CommandHandler("list", list_command))
