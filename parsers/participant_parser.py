@@ -327,7 +327,11 @@ class ParticipantParser:
 
     def _extract_all_fields(self, all_words: list[str], original_text: str):
         self._extract_contacts(all_words)
-        self._extract_simple_fields(all_words)
+        self._extract_gender(all_words)
+        self._extract_size(all_words)
+        self._extract_role_and_department(all_words)
+        self._extract_city(all_words)
+
         self._extract_church(all_words)
         self._extract_submitted_by(original_text)
         self._extract_names(all_words)
@@ -385,10 +389,9 @@ class ParticipantParser:
                     self.processed_words.add(word)
                     break
 
-    def _extract_simple_fields(self, all_words: list[str]):
-        """Извлекает простые поля с учетом приоритетов"""
+    def _extract_gender(self, all_words: list[str]):
+        """Извлекает пол участника."""
         gender_explicit = False
-
         for word in all_words:
             if word in self.processed_words:
                 continue
@@ -397,7 +400,7 @@ class ParticipantParser:
                 self.data['Gender'] = 'F'
                 gender_explicit = True
                 self.processed_words.add(word)
-                break
+                return
 
         for idx, word in enumerate(all_words):
             if word in self.processed_words:
@@ -419,32 +422,46 @@ class ParticipantParser:
                 else:
                     self.data['Gender'] = 'M'
                 self.processed_words.add(word)
-                continue
+                break
 
-            if wu in {_norm_token(s) for s in SIZES}:
+    def _extract_size(self, all_words: list[str]):
+        for word in all_words:
+            if word in self.processed_words:
+                continue
+            wu = _norm_token(word)
+            if wu in NORMALIZED_SIZES:
                 size_val = _norm_size(word)
                 if size_val:
                     self.data['Size'] = size_val
                     self.processed_words.add(word)
 
-            elif any(keyword == wu for keyword in ROLE_KEYWORDS['TEAM']):
+    def _extract_role_and_department(self, all_words: list[str]):
+        for word in all_words:
+            if word in self.processed_words:
+                continue
+            wu = _norm_token(word)
+
+            if any(keyword == wu for keyword in ROLE_KEYWORDS['TEAM']):
                 self.data['Role'] = 'TEAM'
                 self.processed_words.add(word)
             elif any(keyword == wu for keyword in ROLE_KEYWORDS['CANDIDATE']):
                 self.data['Role'] = 'CANDIDATE'
                 self.processed_words.add(word)
             elif not contains_hebrew(word):
-                dept_found = False
                 for dept, keywords in self.department_keywords.items():
                     if any(_norm_token(keyword) == wu for keyword in keywords):
                         self.data['Department'] = dept
                         self.processed_words.add(word)
-                        dept_found = True
                         break
 
-                if not dept_found and wu in self.israel_cities:
-                    self.data['CountryAndCity'] = word
-                    self.processed_words.add(word)
+    def _extract_city(self, all_words: list[str]):
+        for word in all_words:
+            if word in self.processed_words or contains_hebrew(word):
+                continue
+            wu = _norm_token(word)
+            if wu in self.israel_cities:
+                self.data['CountryAndCity'] = word
+                self.processed_words.add(word)
 
     def _extract_church(self, all_words: list[str]):
         for i, word in enumerate(all_words):
