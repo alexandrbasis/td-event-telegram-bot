@@ -197,7 +197,11 @@ async def add_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
 
     await update.message.reply_text(
         "🚀 **Начинаем добавлять нового участника.**\n\n"
-        "Пожалуйста, отправляйте данные по одному полю за раз (например, `Церковь Грейс`) или вставьте заполненный шаблон. "
+        "Отправьте данные любым удобным способом:\n"
+        "1️⃣ **Вставьте заполненный шаблон** (пришлю его следующим сообщением).\n"
+        "2️⃣ **Отправьте несколько полей**, разделяя их запятой (`,`) или каждое с новой строки.\n"
+        "3️⃣ **Отправляйте по одному полю** в сообщении (например, `Церковь Грейс`).\n\n"
+        "*Для самой точной обработки используйте запятые или ввод с новой строки.*\n"
         "Для отмены введите /cancel.",
         parse_mode='Markdown'
     )
@@ -207,22 +211,39 @@ async def add_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
 
 @require_role("coordinator")
 async def handle_partial_data(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Collects and processes partial data from the user."""
+    """Collects and processes partial data, supporting multiple formats."""
     text = update.message.text.strip()
     participant_data = context.user_data.get('add_flow_data', {})
 
-    parsed_update = {}
-
+    # 1. Check if user pasted a full template (highest priority)
     if is_template_format(text):
         parsed_update = parse_template_format(text)
-    elif ':' in text:
-        parsed_update = parse_participant_data(text, is_update=True)
+        for key, value in parsed_update.items():
+            if value:
+                participant_data[key] = value
     else:
-        parsed_update = parse_unstructured_text(text)
+        # 2. Try splitting by newline or comma to detect multiple fields
+        chunks = []
+        if "\n" in text:
+            chunks = [c.strip() for c in text.split("\n") if c.strip()]
+        elif "," in text:
+            chunks = [c.strip() for c in text.split(",") if c.strip()]
+        else:
+            chunks = [text]
 
-    for key, value in parsed_update.items():
-        if value:
-            participant_data[key] = value
+        # Parse each chunk separately
+        for chunk in chunks:
+            if not chunk:
+                continue
+
+            if ':' in chunk:
+                parsed_chunk = parse_participant_data(chunk, is_update=True)
+            else:
+                parsed_chunk = parse_unstructured_text(chunk)
+
+            for key, value in parsed_chunk.items():
+                if value:
+                    participant_data[key] = value
 
     context.user_data['add_flow_data'] = participant_data
 
