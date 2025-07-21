@@ -165,37 +165,93 @@ def parse_template_format(text: str) -> Dict:
 
 
 def parse_unstructured_text(text: str) -> Dict[str, str]:
-    """Parses a single unstructured line for known participant fields."""
-    tokens = text.split()
+    """Parses unstructured text using a non-destructive, prioritized, multi-pass strategy."""
     participant_data: Dict[str, str] = {}
-    consumed: set[int] = set()
+    tokens = text.split()
+    # A list to mark which tokens have been successfully parsed and "consumed"
+    consumed = [False] * len(tokens)
 
+    # --- Pass 1: Match multi-word known church names (highest priority) ---
+    known_churches = cache.get("churches") or []
+    # Sort by number of words in name, descending, to match "Слово Жизни" before "Слово"
+    sorted_church_names = sorted(known_churches, key=lambda x: len(x.split()), reverse=True)
+    for church_name_str in sorted_church_names:
+        name_tokens = church_name_str.split()
+        for i in range(len(tokens) - len(name_tokens) + 1):
+            # Slice of tokens from the input to check for a match
+            chunk = tokens[i:i + len(name_tokens)]
+            # Check if this chunk has already been consumed
+            if any(consumed[i:i + len(name_tokens)]):
+                continue
+            # Compare lowercased tokens
+            if [t.lower() for t in chunk] == [nt.lower() for nt in name_tokens]:
+                participant_data['Church'] = church_name_str.capitalize()
+                for j in range(i, i + len(name_tokens)):
+                    consumed[j] = True
+                # Consume a nearby church identifier if present to avoid it ending up in the name
+                church_identifiers = {kw.lower() for kw in CHURCH_KEYWORDS}
+                if i > 0 and tokens[i - 1].lower() in church_identifiers:
+                    consumed[i - 1] = True
+                elif (
+                    i + len(name_tokens) < len(tokens)
+                    and tokens[i + len(name_tokens)].lower() in church_identifiers
+                ):
+                    consumed[i + len(name_tokens)] = True
+                break
+        if 'Church' in participant_data:
+            break
+
+    # --- Pass 2: Match "keyword + value" pattern for churches (e.g., "церковь Грейс") ---
+    # This runs only if we haven't already found a church
+    church_identifiers = {kw.lower() for kw in CHURCH_KEYWORDS}
+    if 'Church' not in participant_data:
+        for i in range(len(tokens) - 1):
+            if not consumed[i] and not consumed[i + 1] and tokens[i].lower() in church_identifiers:
+                participant_data['Church'] = tokens[i + 1].capitalize()
+                consumed[i] = True  # Consume the identifier (e.g., "церковь")
+                consumed[i + 1] = True  # Consume the name
+                break
+
+    # --- Pass 2.5: Match "keyword + value" for cities (e.g., "город Хайфа") ---
+    city_identifiers = {"город", "из", "city", "from"}
+    if 'CountryAndCity' not in participant_data:
+        for i in range(len(tokens) - 1):
+            if (
+                not consumed[i]
+                and not consumed[i + 1]
+                and tokens[i].lower() in city_identifiers
+            ):
+                participant_data['CountryAndCity'] = tokens[i + 1].capitalize()
+                consumed[i] = True
+                consumed[i + 1] = True
+                break
+
+    # --- Pass 3: Match all other single-token fields ---
     recognizers = {
         'Role': recognize_role,
         'Gender': recognize_gender,
         'Size': recognize_size,
         'Department': recognize_department,
-        'Church': recognize_church,
         'CountryAndCity': recognize_city,
+        'Church': recognize_church,  # Fallback for single-word church names without identifier
     }
-
-    # Pass 1: try to recognize tokens
-    for idx, token in enumerate(tokens):
-        if idx in consumed:
+    for i, token in enumerate(tokens):
+        if consumed[i]:
             continue
         for field, func in recognizers.items():
+            # Do not overwrite already found data
             if field in participant_data:
                 continue
             result = func(token)
             if result:
                 participant_data[field] = result
-                consumed.add(idx)
+                consumed[i] = True
                 break
 
-    # Pass 2: remaining tokens are assumed to be the name
-    remaining = [tokens[i] for i in range(len(tokens)) if i not in consumed]
-    if remaining:
-        participant_data['FullNameRU'] = " ".join(t.capitalize() for t in remaining)
+    # --- Pass 4: Everything that is left is the name ---
+    name_parts = [tokens[i] for i in range(len(tokens)) if not consumed[i]]
+    if name_parts:
+        participant_data['FullNameRU'] = " ".join(name_parts)
 
     return participant_data
 
