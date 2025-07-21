@@ -39,6 +39,7 @@ from utils.exceptions import (
     ValidationError,
 )
 from messages import MESSAGES
+from states import ConversationState
 
 # Настройка логирования
 LOG_FORMAT = '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
@@ -128,7 +129,7 @@ async def add_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     role = get_user_role(user_id)
     logger.info("User %s started add participant", user_id)
     
-    context.user_data['waiting_for_participant'] = True
+    context.user_data[ConversationState.WAITING_FOR_PARTICIPANT] = True
 
     description_text = MESSAGES['ADD_DESCRIPTION']
     template_block = MESSAGES['ADD_TEMPLATE']
@@ -246,8 +247,8 @@ async def process_participant_confirmation(update: Update, context: ContextTypes
         # Найден дубль - объединяем старые и новые данные
         merged_data = merge_participant_data(existing_participant, participant_data)
         context.user_data['parsed_participant'] = merged_data
-        context.user_data['waiting_for_participant'] = False
-        context.user_data['confirming_duplicate'] = True
+        context.user_data[ConversationState.WAITING_FOR_PARTICIPANT] = False
+        context.user_data[ConversationState.CONFIRMING_DUPLICATE] = True
         
         duplicate_warning = f"""
 ⚠️ **ВНИМАНИЕ: Участник уже существует!**
@@ -284,8 +285,8 @@ async def process_participant_confirmation(update: Update, context: ContextTypes
             return
 
         context.user_data['parsed_participant'] = participant_data
-        context.user_data['waiting_for_participant'] = False
-        context.user_data['confirming_participant'] = True
+        context.user_data[ConversationState.WAITING_FOR_PARTICIPANT] = False
+        context.user_data[ConversationState.CONFIRMING_PARTICIPANT] = True
 
         confirmation_text = (
             "🔄 **Исправление данных:**\n\n"
@@ -302,8 +303,8 @@ async def process_participant_confirmation(update: Update, context: ContextTypes
     
     # Дублей нет - показываем обычное подтверждение
     context.user_data['parsed_participant'] = participant_data
-    context.user_data['waiting_for_participant'] = False
-    context.user_data['confirming_participant'] = True
+    context.user_data[ConversationState.WAITING_FOR_PARTICIPANT] = False
+    context.user_data[ConversationState.CONFIRMING_PARTICIPANT] = True
     
     # Готовим два сообщения с распознанными данными
     intro_text = MESSAGES['CONFIRMATION_INTRO']
@@ -325,17 +326,17 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     logger.info(f"User {user_id} state: {context.user_data}")
     
     # Проверяем режим ожидания данных участника
-    if context.user_data.get('waiting_for_participant'):
+    if context.user_data.get(ConversationState.WAITING_FOR_PARTICIPANT):
         await process_participant_confirmation(update, context, message_text)
         return
     
     # Проверяем режим подтверждения
-    if context.user_data.get('confirming_participant'):
+    if context.user_data.get(ConversationState.CONFIRMING_PARTICIPANT):
         await handle_participant_confirmation(update, context, message_text)
         return
     
     # Проверяем режим подтверждения дублей
-    if context.user_data.get('confirming_duplicate'):
+    if context.user_data.get(ConversationState.CONFIRMING_DUPLICATE):
         await handle_participant_confirmation(update, context, message_text)
         return
     
@@ -387,7 +388,7 @@ async def handle_participant_confirmation(update: Update, context: ContextTypes.
         return txt in negative or any(txt.startswith(n) for n in negative)
 
     # Обработка дублей
-    if context.user_data.get('confirming_duplicate'):
+    if context.user_data.get(ConversationState.CONFIRMING_DUPLICATE):
         participant_data = context.user_data['parsed_participant']
 
         if is_positive(normalized):
