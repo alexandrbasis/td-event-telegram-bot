@@ -11,6 +11,7 @@ __pycache__/
 env/
 venv/
 telegram-bot-env/
+CLAUDE.md
 
 # IDE
 .vscode/
