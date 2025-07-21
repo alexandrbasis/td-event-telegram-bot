@@ -2,6 +2,8 @@ from typing import Dict, List, Optional
 import logging
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
+from repositories.participant_repository import AbstractParticipantRepository
+from models.participant import Participant
 from database import find_participant_by_name
 from utils.validators import validate_participant_data
 from utils.exceptions import (
@@ -118,15 +120,13 @@ def check_duplicate(full_name_ru: str) -> Optional[Dict]:
 class ParticipantService:
     """Service layer for participant operations."""
 
-    def __init__(self, db_connection):
-        self.db = db_connection
+    def __init__(self, repository: AbstractParticipantRepository):
+        # Service depends on the repository abstraction, not a concrete DB
+        self.repository = repository
 
     async def check_duplicate(self, full_name_ru: str) -> Optional[Dict]:
         """Return participant if exists, otherwise None."""
-        try:
-            return self.db.find_participant_by_name(full_name_ru)
-        except ParticipantNotFoundError:
-            return None
+        return self.repository.get_by_name(full_name_ru)
 
     async def add_participant(self, data: Dict) -> int:
         """Validate data, check for duplicates and save participant."""
@@ -140,7 +140,8 @@ class ParticipantService:
                 f"Participant '{data.get('FullNameRU')}' already exists"
             )
 
-        return self.db.add_participant(data)
+        new_participant = Participant(**data)
+        return self.repository.add(new_participant)
 
     async def update_participant(self, participant_id: int, data: Dict) -> bool:
         """Validate and update participant."""
@@ -148,4 +149,4 @@ class ParticipantService:
         if not valid:
             raise ValidationError(error)
 
-        return self.db.update_participant(participant_id, data)
+        return self.repository.update(participant_id, data)
