@@ -1,7 +1,9 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from typing import Optional
 
 @dataclass
 class Participant:
+    id: Optional[int] = field(default=None, compare=False)
     FullNameRU: str
     Gender: str = "F"
     Size: str = ""

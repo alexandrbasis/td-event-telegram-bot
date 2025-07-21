@@ -1,4 +1,5 @@
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Union
+from dataclasses import asdict
 import logging
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
@@ -41,9 +42,12 @@ FIELD_EMOJIS = {
 }
 
 
-def merge_participant_data(existing_data: Dict, updates: Dict) -> Dict:
+def merge_participant_data(existing_data: Union[Participant, Dict], updates: Dict) -> Dict:
     """Merge existing participant data with new values."""
-    merged = existing_data.copy()
+    if isinstance(existing_data, Participant):
+        merged = asdict(existing_data)
+    else:
+        merged = existing_data.copy()
     for key, value in updates.items():
         if value is not None and value != '':
             merged[key] = value

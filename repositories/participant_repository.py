@@ -55,6 +55,7 @@ class SqliteParticipantRepository(AbstractParticipantRepository):
     def add(self, participant: Participant) -> int:
         logger.info(f"Adding participant to SQLite: {participant.FullNameRU}")
         participant_data = asdict(participant)
+        participant_data.pop('id', None)
         return add_participant(participant_data)
 
     def get_by_id(self, participant_id: int) -> Optional[Participant]:
