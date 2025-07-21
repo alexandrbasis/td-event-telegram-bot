@@ -106,5 +106,28 @@ class ParserTestCase(unittest.TestCase):
         self.assertEqual(data['Size'], 'L')
         self.assertEqual(data['Church'], 'Благодать')
 
+    def test_template_normalization(self):
+        text = "\n".join([
+            "Имя (рус): Иван Петров",
+            "Пол: муж",
+            "Размер: extra large",
+            "Роль: тим",
+            "Департамент: админ",
+        ])
+        data = parse_participant_data(text)
+        self.assertEqual(data['Gender'], 'M')
+        self.assertEqual(data['Size'], 'XL')
+        self.assertEqual(data['Role'], 'TEAM')
+        self.assertEqual(data['Department'], 'Administration')
+
+    def test_template_unknown_department(self):
+        text = "\n".join([
+            "Имя (рус): Иван",
+            "Пол: M",
+            "Департамент: Support",
+        ])
+        data = parse_participant_data(text)
+        self.assertEqual(data['Department'], '')
+
 if __name__ == '__main__':
     unittest.main()

@@ -15,6 +15,62 @@ logger = logging.getLogger(__name__)
 
 CHURCH_KEYWORDS = ['ЦЕРКОВЬ', 'CHURCH', 'ХРАМ', 'ОБЩИНА']
 
+# Punctuation characters to strip when normalizing tokens
+PUNCTUATION_CHARS = '.,!?:;'
+
+# Mapping of size synonyms to their canonical values
+SIZE_KEYWORDS_MAP = {
+    'XS': {'XS', 'EXTRA SMALL', 'EXTRASMALL'},
+    'S': {'S', 'SMALL'},
+    'M': {'M', 'MEDIUM'},
+    'L': {'L', 'LARGE'},
+    'XL': {'XL', 'EXTRA LARGE', 'EXTRALARGE'},
+    'XXL': {'XXL', '2XL', 'EXTRA EXTRA LARGE'},
+    '3XL': {'3XL', 'XXXL'},
+}
+
+
+def _norm_token(token: str) -> str:
+    """Strip punctuation and convert to upper case."""
+    return token.strip(PUNCTUATION_CHARS).upper()
+
+
+NORMALIZED_SIZES = {_norm_token(s) for synonyms in SIZE_KEYWORDS_MAP.values() for s in synonyms}
+
+
+def _norm_gender(value: str) -> Optional[str]:
+    val = _norm_token(value)
+    if val in GENDER_KEYWORDS['M']:
+        return 'M'
+    if val in GENDER_KEYWORDS['F']:
+        return 'F'
+    return None
+
+
+def _norm_role(value: str) -> Optional[str]:
+    val = _norm_token(value)
+    if val in ROLE_KEYWORDS['TEAM']:
+        return 'TEAM'
+    if val in ROLE_KEYWORDS['CANDIDATE']:
+        return 'CANDIDATE'
+    return None
+
+
+def _norm_department(value: str, dept_keywords: Dict[str, list]) -> Optional[str]:
+    val = _norm_token(value)
+    for dept, keys in dept_keywords.items():
+        if val in [k.upper() for k in keys]:
+            return dept
+    return None
+
+
+def _norm_size(value: str) -> Optional[str]:
+    val = _norm_token(value)
+    for canon, keys in SIZE_KEYWORDS_MAP.items():
+        if val in {k.upper() for k in keys}:
+            return canon
+    return None
+
 # Служебные слова, которые встречаются в блоке подтверждения
 CONFIRMATION_NOISE_WORDS = {
     'ВОТ', 'ЧТО', 'Я', 'ПОНЯЛ', 'ИЗ', 'ВАШИХ', 'ДАННЫХ', 'ИМЯ', 'РУС', 'АНГЛ',
@@ -72,6 +128,9 @@ def parse_template_format(text: str) -> Dict:
     items = []
     for part in parts:
         items.extend(part.split(','))
+
+    dept_keywords = cache.get("departments") or {}
+
     for item in items:
         if ':' not in item:
             continue
@@ -82,7 +141,16 @@ def parse_template_format(text: str) -> Dict:
             value = ''
         for ru, eng in TEMPLATE_FIELD_MAP.items():
             if key.lower() == ru.lower():
-                data[eng] = value or ''
+                norm = value or ''
+                if eng == 'Gender':
+                    norm = _norm_gender(value) or ''
+                elif eng == 'Role':
+                    norm = _norm_role(value) or ''
+                elif eng == 'Department':
+                    norm = _norm_department(value, dept_keywords) or ''
+                elif eng == 'Size':
+                    norm = _norm_size(value) or ''
+                data[eng] = norm
                 break
     logger.debug("parse_template_format parsed fields: %s", list(data.keys()))
     return data
@@ -163,46 +231,31 @@ def parse_field_update(text: str, field_hint: str) -> Dict:
 
     if field_hint == 'Gender':
         for word in words:
-            wu = word.upper()
-            if wu in GENDER_KEYWORDS['F']:
-                update['Gender'] = 'F'
-                break
-            if wu in GENDER_KEYWORDS['M']:
-                update['Gender'] = 'M'
+            gender_val = _norm_gender(word)
+            if gender_val:
+                update['Gender'] = gender_val
                 break
 
     elif field_hint == 'Size':
         for word in words:
-            wu = word.upper()
-            if wu in SIZES:
-                if wu == 'MEDIUM':
-                    update['Size'] = 'M'
-                elif wu == 'LARGE':
-                    update['Size'] = 'L'
-                elif wu == 'SMALL':
-                    update['Size'] = 'S'
-                else:
-                    update['Size'] = wu
+            size_val = _norm_size(word)
+            if size_val:
+                update['Size'] = size_val
                 break
 
     elif field_hint == 'Role':
         for word in words:
-            wu = word.upper()
-            if wu in ROLE_KEYWORDS['TEAM']:
-                update['Role'] = 'TEAM'
-                break
-            if wu in ROLE_KEYWORDS['CANDIDATE']:
-                update['Role'] = 'CANDIDATE'
+            role_val = _norm_role(word)
+            if role_val:
+                update['Role'] = role_val
                 break
 
     elif field_hint == 'Department':
         dept_keywords = cache.get("departments") or {}
-        for dept, keys in dept_keywords.items():
-            for word in words:
-                if word.upper() in keys:
-                    update['Department'] = dept
-                    break
-            if 'Department' in update:
+        for word in words:
+            dept_val = _norm_department(word, dept_keywords)
+            if dept_val:
+                update['Department'] = dept_val
                 break
 
     elif field_hint == 'Church':
@@ -339,7 +392,7 @@ class ParticipantParser:
         for word in all_words:
             if word in self.processed_words:
                 continue
-            wu = word.upper()
+            wu = _norm_token(word)
             if wu in GENDER_KEYWORDS['F']:
                 self.data['Gender'] = 'F'
                 gender_explicit = True
@@ -349,7 +402,7 @@ class ParticipantParser:
         for idx, word in enumerate(all_words):
             if word in self.processed_words:
                 continue
-            wu = word.upper()
+            wu = _norm_token(word)
 
             if wu in GENDER_KEYWORDS['M'] and not gender_explicit:
                 if wu == 'M' and not self.data.get('Size'):
@@ -368,16 +421,11 @@ class ParticipantParser:
                 self.processed_words.add(word)
                 continue
 
-            if wu in SIZES:
-                if wu == 'MEDIUM':
-                    self.data['Size'] = 'M'
-                elif wu == 'LARGE':
-                    self.data['Size'] = 'L'
-                elif wu == 'SMALL':
-                    self.data['Size'] = 'S'
-                else:
-                    self.data['Size'] = wu
-                self.processed_words.add(word)
+            if wu in {_norm_token(s) for s in SIZES}:
+                size_val = _norm_size(word)
+                if size_val:
+                    self.data['Size'] = size_val
+                    self.processed_words.add(word)
 
             elif any(keyword == wu for keyword in ROLE_KEYWORDS['TEAM']):
                 self.data['Role'] = 'TEAM'
@@ -388,7 +436,7 @@ class ParticipantParser:
             elif not contains_hebrew(word):
                 dept_found = False
                 for dept, keywords in self.department_keywords.items():
-                    if any(keyword == wu for keyword in keywords):
+                    if any(_norm_token(keyword) == wu for keyword in keywords):
                         self.data['Department'] = dept
                         self.processed_words.add(word)
                         dept_found = True
