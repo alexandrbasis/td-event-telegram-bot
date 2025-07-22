@@ -9,6 +9,36 @@ from utils.exceptions import (
     ValidationError,
 )
 
+"""
+===============================================================================
+ПРАВИЛА ОБРАБОТКИ ИСКЛЮЧЕНИЙ В DATABASE LAYER
+===============================================================================
+
+🔍 ФУНКЦИИ ПОИСКА (get_*, find_*):
+    - Возвращают None если запись не найдена
+    - Бросают BotException только при реальных ошибках БД (connection, syntax, etc.)
+    - НЕ бросают ParticipantNotFoundError
+
+📝 ФУНКЦИИ ИЗМЕНЕНИЯ (add_*, update_*, delete_*):
+    - Бросают ParticipantNotFoundError если запись не найдена для изменения
+    - Бросают ValidationError при нарушении ограничений БД
+    - Бросают BotException при ошибках БД
+
+✅ ПРИМЕРЫ:
+    get_participant_by_id(999) -> None (не найден)
+    update_participant(999, data) -> ParticipantNotFoundError (не найден для изменения)
+    add_participant(invalid_data) -> ValidationError (нарушены ограничения)
+
+    # Правильное использование:
+    participant = get_participant_by_id(123)
+    if participant is None:
+        print("Не найден")
+    else:
+        print(f"Найден: {participant['FullNameRU']}")
+        
+===============================================================================
+"""
+
 DB_PATH = "participants.db"
 logger = logging.getLogger(__name__)
 
@@ -152,6 +182,18 @@ def get_all_participants() -> List[Dict]:
 
 
 def get_participant_by_id(participant_id: int) -> Optional[Dict]:
+    """
+    ✅ ИСПРАВЛЕНО: возвращает None вместо исключения, если участник не найден.
+
+    Args:
+        participant_id: ID участника для поиска
+
+    Returns:
+        Dict с данными участника или None, если не найден
+
+    Raises:
+        BotException: При ошибках базы данных (но НЕ при "не найдено")
+    """
     try:
         with DatabaseConnection() as conn:
             cursor = conn.cursor()
@@ -161,16 +203,45 @@ def get_participant_by_id(participant_id: int) -> Optional[Dict]:
             )
             row = cursor.fetchone()
             if not row:
-                raise ParticipantNotFoundError(
-                    f"Participant with id {participant_id} not found"
-                )
+                logger.debug(f"Participant with id {participant_id} not found")
+                return None
             return dict(row)
     except sqlite3.Error as e:
-        logger.error("Database error while fetching participant: %s", e)
+        logger.error(
+            "Database error while fetching participant by ID %s: %s",
+            participant_id,
+            e,
+        )
         raise BotException("Database error while fetching participant") from e
 
 
+def get_participant_by_id_safe(participant_id: int, context: str = "") -> Optional[Dict]:
+    """
+    ✅ НОВАЯ ФУНКЦИЯ: безопасное получение участника с контекстным логированием.
+
+    Args:
+        participant_id: ID участника
+        context: Контекст вызова для логирования (например, "update_participant")
+
+    Returns:
+        Dict с данными участника или None
+    """
+    participant = get_participant_by_id(participant_id)
+    if participant is None:
+        logger.warning(
+            f"Participant {participant_id} not found in context: {context or 'unknown'}"
+        )
+    else:
+        logger.debug(
+            f"Found participant {participant_id} ({participant.get('FullNameRU', 'unnamed')}) "
+            f"in context: {context or 'unknown'}"
+        )
+    return participant
+
+
 def update_participant(participant_id: int, participant_data: Dict) -> bool:
+    """Update a participant or raise ParticipantNotFoundError if missing."""
+
     participant_data = _truncate_fields(participant_data)
     try:
         with DatabaseConnection() as conn:
