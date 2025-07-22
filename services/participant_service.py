@@ -134,6 +134,9 @@ class ParticipantService:
 
     def add_participant(self, data: Dict) -> int:
         """Validate data, check for duplicates and save participant."""
+        if data.get('Role') == 'CANDIDATE':
+            data['Department'] = ''
+
         valid, error = validate_participant_data(data)
         if not valid:
             raise ValidationError(error)
@@ -149,6 +152,9 @@ class ParticipantService:
 
     def update_participant(self, participant_id: int, data: Dict) -> bool:
         """Validate and update participant."""
+        if data.get('Role') == 'CANDIDATE':
+            data['Department'] = ''
+
         valid, error = validate_participant_data(data)
         if not valid:
             raise ValidationError(error)
