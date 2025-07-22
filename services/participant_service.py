@@ -138,6 +138,9 @@ class ParticipantService:
         if not valid:
             raise ValidationError(error)
 
+        if data.get('Role') == 'CANDIDATE':
+            data['Department'] = None
+
         existing = await self.check_duplicate(data.get("FullNameRU", ""))
         if existing:
             raise DuplicateParticipantError(
@@ -152,5 +155,8 @@ class ParticipantService:
         valid, error = validate_participant_data(data)
         if not valid:
             raise ValidationError(error)
+
+        if data.get('Role') == 'CANDIDATE':
+            data['Department'] = None
 
         return self.repository.update(participant_id, data)

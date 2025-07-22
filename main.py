@@ -320,7 +320,9 @@ async def list_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     for p in participants:
         role_emoji = "👤" if p.Role == 'CANDIDATE' else "👨‍💼"
-        department = f" ({p.Department})" if p.Department else ""
+        department = (
+            f" ({p.Department})" if p.Role == 'TEAM' and p.Department else ""
+        )
 
         message += f"{role_emoji} **{p.FullNameRU}**\n"
         message += f"   • Роль: {p.Role}{department}\n"

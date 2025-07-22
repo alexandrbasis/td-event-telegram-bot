@@ -24,7 +24,8 @@ logger = logging.getLogger(__name__)
 CHURCH_KEYWORDS = ['ЦЕРКОВЬ', 'CHURCH', 'ХРАМ', 'ОБЩИНА']
 
 # Punctuation characters to strip when normalizing tokens
-PUNCTUATION_CHARS = '.,!?:;'
+# Added quotes to clean up inputs like "worship" or 'worship'
+PUNCTUATION_CHARS = '.,!?:;\'"'
 
 # Mapping of size synonyms to their canonical values
 SIZE_KEYWORDS_MAP = {

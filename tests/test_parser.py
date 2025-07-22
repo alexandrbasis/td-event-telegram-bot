@@ -24,6 +24,11 @@ class ParserTestCase(unittest.TestCase):
         self.assertEqual(data['Role'], 'TEAM')
         self.assertEqual(data['Department'], 'Worship')
 
+    def test_parse_department_with_quotes(self):
+        text = "Иван Петров M команда 'worship'"
+        data = parse_participant_data(text)
+        self.assertEqual(data['Department'], 'Worship')
+
     def test_russian_size_and_gender_priority(self):
         text = "Ольга Сергеевна жен М Афула церковь Благодать"
         data = parse_participant_data(text)
