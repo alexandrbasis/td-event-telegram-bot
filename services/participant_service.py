@@ -128,17 +128,17 @@ class ParticipantService:
         # Service depends on the repository abstraction, not a concrete DB
         self.repository = repository
 
-    async def check_duplicate(self, full_name_ru: str) -> Optional[Dict]:
+    def check_duplicate(self, full_name_ru: str) -> Optional[Participant]:
         """Return participant if exists, otherwise None."""
         return self.repository.get_by_name(full_name_ru)
 
-    async def add_participant(self, data: Dict) -> int:
+    def add_participant(self, data: Dict) -> int:
         """Validate data, check for duplicates and save participant."""
         valid, error = validate_participant_data(data)
         if not valid:
             raise ValidationError(error)
 
-        existing = await self.check_duplicate(data.get("FullNameRU", ""))
+        existing = self.check_duplicate(data.get("FullNameRU", ""))
         if existing:
             raise DuplicateParticipantError(
                 f"Participant '{data.get('FullNameRU')}' already exists"
@@ -147,7 +147,7 @@ class ParticipantService:
         new_participant = Participant(**data)
         return self.repository.add(new_participant)
 
-    async def update_participant(self, participant_id: int, data: Dict) -> bool:
+    def update_participant(self, participant_id: int, data: Dict) -> bool:
         """Validate and update participant."""
         valid, error = validate_participant_data(data)
         if not valid:
