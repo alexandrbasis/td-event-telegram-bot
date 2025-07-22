@@ -351,6 +351,19 @@ def find_participant_by_name(full_name_ru: str) -> Optional[Dict]:
         # В случае реальной ошибки БД, мы по-прежнему генерируем исключение.
         raise BotException("Database error while searching participant") from e
 
+# Экспортируемые функции модуля
+__all__ = [
+    "init_database",
+    "add_participant",
+    "get_all_participants",
+    "get_participant_by_id",
+    "get_participant_by_id_safe",
+    "update_participant",
+    "update_participant_field",
+    "delete_participant",
+    "find_participant_by_name",
+]
+
 
 if __name__ == "__main__":
     init_database()
