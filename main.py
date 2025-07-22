@@ -4,6 +4,7 @@ import re
 from typing import List, Dict, Optional
 from dataclasses import asdict
 from telegram import Update
+from functools import wraps
 from telegram.ext import (
     Application,
     CommandHandler,
@@ -41,6 +42,59 @@ from utils.exceptions import (
 )
 from messages import MESSAGES
 from states import CONFIRMING_DATA, CONFIRMING_DUPLICATE, COLLECTING_DATA
+
+
+def cleanup_on_error(func):
+    """Декоратор для автоматической очистки состояния пользователя при ошибках."""
+
+    @wraps(func)
+    async def wrapper(update: Update, context: ContextTypes.DEFAULT_TYPE, *args, **kwargs):
+        try:
+            return await func(update, context, *args, **kwargs)
+        except Exception as e:
+            user_id = update.effective_user.id if update.effective_user else "unknown"
+            logger.error(
+                f"Error in {func.__name__} for user {user_id}: {type(e).__name__}: {e}",
+                exc_info=True,
+            )
+
+            cleanup_user_data_safe(context, update.effective_user.id)
+            logger.info(f"Cleared user_data for user {user_id} due to error in {func.__name__}")
+
+            try:
+                if update.message:
+                    await update.message.reply_text(
+                        "❌ **Произошла ошибка при обработке данных.**\n\n"
+                        "🔄 Попробуйте снова с команды /add\n"
+                        "📞 Если проблема повторяется, обратитесь к администратору.",
+                        parse_mode='Markdown',
+                    )
+                elif update.callback_query:
+                    await update.callback_query.answer()
+                    await update.callback_query.message.reply_text(
+                        "❌ **Произошла ошибка при обработке данных.**\n\n"
+                        "🔄 Попробуйте снова с команды /add",
+                        parse_mode='Markdown',
+                    )
+            except Exception as send_error:
+                logger.error(f"Failed to send error message to user {user_id}: {send_error}")
+
+            return ConversationHandler.END
+
+    return wrapper
+
+
+def cleanup_user_data_safe(context: ContextTypes.DEFAULT_TYPE, user_id: int = None):
+    """Безопасная очистка user_data с логированием."""
+
+    if context.user_data:
+        keys_to_clear = list(context.user_data.keys())
+        context.user_data.clear()
+        logger.info(
+            f"Manually cleared user_data for user {user_id or 'unknown'}: removed keys {keys_to_clear}"
+        )
+    else:
+        logger.debug(f"user_data already empty for user {user_id or 'unknown'}")
 
 # Настройка логирования
 LOG_FORMAT = '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
@@ -178,6 +232,7 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # Команда /add
 @require_role("coordinator")
+@cleanup_on_error
 async def add_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Starts the /add flow and initializes the session."""
     user_id = update.effective_user.id
@@ -211,6 +266,7 @@ async def add_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
 
 
 @require_role("coordinator")
+@cleanup_on_error
 async def handle_partial_data(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Collects and processes partial data, supporting multiple formats."""
     text = update.message.text.strip()
@@ -479,6 +535,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
     
 # Обработка подтверждения пользователя
+@cleanup_on_error
 async def handle_participant_confirmation(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
@@ -553,7 +610,7 @@ async def handle_participant_confirmation(
                     "❌ Ошибка базы данных при добавлении участника."
                 )
                 return ConversationHandler.END
-            context.user_data.clear()
+            cleanup_user_data_safe(context, update.effective_user.id)
             
             await update.message.reply_text(
                 f"✅ **Участник добавлен как новый (возможен дубль)**\n\n"
@@ -581,7 +638,7 @@ async def handle_participant_confirmation(
                         "❌ Ошибка базы данных при обновлении участника."
                     )
                     return ConversationHandler.END
-                context.user_data.clear()
+                cleanup_user_data_safe(context, update.effective_user.id)
                 
                 if updated:
                     await update.message.reply_text(
@@ -597,7 +654,7 @@ async def handle_participant_confirmation(
             
         elif is_negative(normalized):
             # Отменяем добавление
-            context.user_data.clear()
+            cleanup_user_data_safe(context, update.effective_user.id)
             await update.message.reply_text(
                 "❌ Добавление участника отменено из-за дублирования.\n\n"
                 "Используйте /add для повторной попытки."
@@ -635,7 +692,7 @@ async def handle_participant_confirmation(
             return ConversationHandler.END
 
         was_update = bool(context.user_data.get('participant_id'))
-        context.user_data.clear()
+        cleanup_user_data_safe(context, update.effective_user.id)
 
         success_text = (
             "✅ **Данные участника успешно обновлены!**"
@@ -665,7 +722,7 @@ async def handle_participant_confirmation(
 
     elif is_negative(normalized):
         # Отменяем добавление
-        context.user_data.clear()
+        cleanup_user_data_safe(context, update.effective_user.id)
         await update.message.reply_text(
             "❌ Добавление участника отменено.\n\n"
             "Используйте /add для повторной попытки."
@@ -677,6 +734,7 @@ async def handle_participant_confirmation(
         return await process_participant_confirmation(update, context, text, is_update=True)
 
 
+@cleanup_on_error
 async def edit_field_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Обрабатывает нажатие на кнопку редактирования поля."""
     query = update.callback_query
