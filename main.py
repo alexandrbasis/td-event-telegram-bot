@@ -249,7 +249,7 @@ async def handle_partial_data(update: Update, context: ContextTypes.DEFAULT_TYPE
     # --- NAME DUPLICATE CHECK BLOCK ---
     newly_identified_name = participant_data.get('FullNameRU')
     if newly_identified_name and not context.user_data.get('participant_id'):
-        existing_participant = participant_repository.get_by_name(newly_identified_name)
+        existing_participant = participant_service.check_duplicate(newly_identified_name)
         if existing_participant:
             context.user_data['participant_id'] = existing_participant.id
             existing_dict = asdict(existing_participant)
@@ -387,7 +387,7 @@ async def process_participant_confirmation(
 
     existing_participant = None
     if not is_update:
-        existing_participant = await participant_service.check_duplicate(
+        existing_participant = participant_service.check_duplicate(
             participant_data['FullNameRU']
         )
     
@@ -540,7 +540,7 @@ async def handle_participant_confirmation(
         if is_positive(normalized):
             # Добавляем как нового участника несмотря на дубль
             try:
-                participant_id = await participant_service.add_participant(participant_data)
+                participant_id = participant_service.add_participant(participant_data)
             except ValidationError as e:
                 await update.message.reply_text(f"❌ Ошибка валидации: {e}")
                 return ConversationHandler.END
@@ -565,10 +565,10 @@ async def handle_participant_confirmation(
             
         elif normalized in ['ЗАМЕНИТЬ', 'REPLACE', 'ОБНОВИТЬ', 'UPDATE']:
             # Находим существующего участника и обновляем
-            existing = await participant_service.check_duplicate(participant_data['FullNameRU'])
+            existing = participant_service.check_duplicate(participant_data['FullNameRU'])
             if existing:
                 try:
-                    updated = await participant_service.update_participant(existing.id, participant_data)
+                    updated = participant_service.update_participant(existing.id, participant_data)
                 except ValidationError as e:
                     await update.message.reply_text(f"❌ Ошибка валидации: {e}")
                     return ConversationHandler.END
@@ -618,9 +618,9 @@ async def handle_participant_confirmation(
 
         try:
             if participant_id:
-                await participant_service.update_participant(participant_id, participant_data)
+                participant_service.update_participant(participant_id, participant_data)
             else:
-                participant_id = await participant_service.add_participant(participant_data)
+                participant_id = participant_service.add_participant(participant_data)
         except ValidationError as e:
             await update.message.reply_text(f"❌ Ошибка валидации: {e}")
             return ConversationHandler.END
