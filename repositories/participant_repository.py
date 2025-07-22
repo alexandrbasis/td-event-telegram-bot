@@ -40,6 +40,16 @@ class AbstractParticipantRepository(ABC):
         """Обновляет указанные поля участника."""
         pass
 
+    @abstractmethod
+    def delete(self, participant_id: int) -> bool:
+        """Удаляет участника."""
+        pass
+
+    @abstractmethod
+    def exists(self, participant_id: int) -> bool:
+        """Проверяет существование участника."""
+        pass
+
 
 import logging
 from dataclasses import asdict
@@ -53,6 +63,7 @@ from database import (
     get_all_participants,
     update_participant,
     update_participant_field,
+    delete_participant,
 )
 
 logger = logging.getLogger(__name__)
@@ -117,3 +128,10 @@ class SqliteParticipantRepository(AbstractParticipantRepository):
             f"Updating participant fields in SQLite, ID: {participant_id}, fields: {list(fields.keys())}"
         )
         return update_participant_field(participant_id, fields)
+
+    def delete(self, participant_id: int) -> bool:
+        logger.info(f"Deleting participant from SQLite: {participant_id}")
+        return delete_participant(participant_id)
+
+    def exists(self, participant_id: int) -> bool:
+        return self.get_by_id(participant_id) is not None

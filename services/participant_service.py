@@ -204,3 +204,19 @@ class ParticipantService:
         detailed_errors = get_validation_errors_summary(data)
         error_messages = [f"{field}: {err}" for field, err in detailed_errors.items()]
         raise ValidationError("; ".join(error_messages))
+
+    def get_participant(self, participant_id: int) -> Optional[Participant]:
+        """Return participant by ID if exists."""
+        return self.repository.get_by_id(participant_id)
+
+    def get_all_participants(self) -> List[Participant]:
+        """Return all participants."""
+        return self.repository.get_all()
+
+    def delete_participant(self, participant_id: int) -> bool:
+        """Delete participant by ID."""
+        return self.repository.delete(participant_id)
+
+    def participant_exists(self, participant_id: int) -> bool:
+        """Check if a participant exists."""
+        return self.repository.exists(participant_id)
