@@ -281,6 +281,43 @@ def update_participant(participant_id: int, participant_data: Dict) -> bool:
         raise BotException("Database error while updating participant") from e
 
 
+def delete_participant(participant_id: int) -> bool:
+    """
+    ✅ НОВАЯ ФУНКЦИЯ: удаление участника по ID.
+
+    Args:
+        participant_id: ID участника для удаления
+
+    Returns:
+        bool: True если удаление успешно
+
+    Raises:
+        ParticipantNotFoundError: Если участник не найден
+        BotException: При ошибках базы данных
+    """
+    try:
+        with DatabaseConnection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "DELETE FROM participants WHERE id = ?",
+                (participant_id,),
+            )
+
+            if cursor.rowcount == 0:
+                raise ParticipantNotFoundError(
+                    f"Participant with id {participant_id} not found for deletion"
+                )
+
+            logger.info("Successfully deleted participant %s", participant_id)
+            return True
+
+    except sqlite3.Error as e:
+        logger.error(
+            "Database error while deleting participant %s: %s", participant_id, e
+        )
+        raise BotException("Database error while deleting participant") from e
+
+
 VALID_FIELDS = {
     'FullNameRU', 'Gender', 'Size', 'CountryAndCity', 'Church',
     'Role', 'Department', 'FullNameEN', 'SubmittedBy', 'ContactInformation'

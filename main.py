@@ -357,6 +357,52 @@ async def delete_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         parse_mode='Markdown'
     )
 
+@require_role("coordinator")
+async def edit_field_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """
+    ✅ НОВАЯ КОМАНДА: Демонстрация частичного обновления полей.
+
+    Использование: /edit_field 123 FullNameRU "Новое имя"
+    """
+    try:
+        parts = update.message.text.split(' ', 3)
+        if len(parts) < 4:
+            await update.message.reply_text(
+                "❌ **Использование:** /edit_field ID поле значение\n\n"
+                "**Пример:** /edit_field 123 FullNameRU \"Новое имя\"",
+                parse_mode='Markdown'
+            )
+            return
+
+        _, participant_id, field_name, new_value = parts
+        participant_id = int(participant_id)
+
+        if not participant_service.participant_exists(participant_id):
+            await update.message.reply_text(f"❌ Участник с ID {participant_id} не найден")
+            return
+
+        kwargs = {field_name: new_value}
+        success = participant_service.update_participant_fields(participant_id, **kwargs)
+
+        if success:
+            await update.message.reply_text(
+                f"✅ **Поле обновлено!**\n\n"
+                f"🆔 ID: {participant_id}\n"
+                f"📝 Поле: {field_name}\n"
+                f"🔄 Новое значение: {new_value}",
+                parse_mode='Markdown'
+            )
+        else:
+            await update.message.reply_text("❌ Ошибка при обновлении поля")
+
+    except ValueError as e:
+        await update.message.reply_text(f"❌ Ошибка валидации: {e}")
+    except ParticipantNotFoundError as e:
+        await update.message.reply_text(f"❌ {e}")
+    except Exception as e:
+        logger.error("Error in edit_field_command: %s", e)
+        await update.message.reply_text("❌ Произошла ошибка при обновлении поля")
+
 # Команда /list
 @require_role("viewer")
 async def list_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -364,8 +410,8 @@ async def list_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     role = get_user_role(user_id)
     logger.info("User %s requested participants list", user_id)
     
-    # Получаем участников из репозитория
-    participants = participant_repository.get_all()
+    # ✅ ИСПРАВЛЕНИЕ: используем новый service для получения списка
+    participants = participant_service.get_all_participants()
     
     if not participants:
         await update.message.reply_text("📋 **Список участников пуст**\n\nИспользуйте /add для добавления участников.", parse_mode='Markdown')
@@ -784,6 +830,7 @@ def main():
 
     application.add_handler(add_conv)
     application.add_handler(CommandHandler("edit", edit_command))
+    application.add_handler(CommandHandler("edit_field", edit_field_command))
     application.add_handler(CommandHandler("delete", delete_command))
     application.add_handler(CommandHandler("list", list_command))
     application.add_handler(CommandHandler("export", export_command))
