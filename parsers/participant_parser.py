@@ -932,34 +932,32 @@ class ParticipantParser:
 
     def _extract_names(self, all_words: list[str]):
         """
-        Extracts Russian and English names from a list of words.
-        It assumes that Russian name words come first, followed by English ones.
+        Извлекает русские и английские имена, классифицируя каждое слово
+        по используемому алфавиту (кириллица или латиница).
         """
+
         unprocessed_words = [w for w in all_words if w not in self.processed_words]
 
-        russian_name_parts = []
-        english_name_parts = []
-
-        switched_to_english = False
+        russian_parts = []
+        english_parts = []
 
         for word in unprocessed_words:
-            is_english = word.isalpha() and all(ord(c) < 128 for c in word)
+            # Слово считается английским, если оно состоит только из базовых ASCII букв.
+            # isalpha() проверяет, что это буквы, а isascii() - что это латиница.
+            if word.isalpha() and word.isascii():
+                english_parts.append(word)
+            else:
+                # Все остальное (кириллица, слова с дефисами, смешанные слова)
+                # считаем частью русского имени.
+                russian_parts.append(word)
 
-            if is_english and not switched_to_english:
-                switched_to_english = True
+        if russian_parts:
+            self.data["FullNameRU"] = " ".join(russian_parts)
+            self.processed_words.update(russian_parts)
 
-            if switched_to_english and is_english:
-                english_name_parts.append(word)
-            elif not switched_to_english:
-                russian_name_parts.append(word)
-
-        if russian_name_parts:
-            self.data["FullNameRU"] = " ".join(russian_name_parts)
-            self.processed_words.update(russian_name_parts)
-
-        if english_name_parts:
-            self.data["FullNameEN"] = " ".join(english_name_parts)
-            self.processed_words.update(english_name_parts)
+        if english_parts:
+            self.data["FullNameEN"] = " ".join(english_parts)
+            self.processed_words.update(english_parts)
 
 
 def parse_participant_data(text: str, is_update: bool = False) -> Dict:
