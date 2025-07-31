@@ -83,9 +83,14 @@ class IsraeliPhoneValidationTestCase(unittest.TestCase):
         )
         self.assertEqual(result["ContactInformation"], "02-123-4567")
 
+        result = parse_participant_data(
+            "Саша Басис муж L церковь Благодать кандидат хайфа +972312434412"
+        )
+        self.assertEqual(result["FullNameRU"], "Саша Басис")
+        self.assertEqual(result["ContactInformation"], "+972312434412")
+
         result = parse_participant_data("Ицхак Петров муж L церковь Грейс 051-123-4567")
         self.assertEqual(result["ContactInformation"], "")
-
 
 class ContactValidationTestCase(unittest.TestCase):
     def test_valid_emails(self):
