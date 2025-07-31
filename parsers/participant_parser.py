@@ -443,6 +443,60 @@ def parse_template_format(text: str) -> Dict:
     return data
 
 
+def _smart_name_classification(words):
+    """Smart classification of names into Russian and English with context."""
+    if len(words) <= 2:
+        # Simple case: 1-2 words, use alphabet detection
+        russian_parts = []
+        english_parts = []
+
+        for word in words:
+            # Убираем дефисы для проверки, что остались только буквы
+            cleaned = word.replace("-", "")
+            if cleaned.isalpha() and word.isascii():
+                english_parts.append(word)
+            else:
+                russian_parts.append(word)
+
+        return russian_parts, english_parts
+
+    # Complex case: 3+ words, try to group them intelligently
+    russian_parts = []
+    english_parts = []
+
+    # Group consecutive words of the same type
+    current_group = []
+    current_type = None
+
+    for word in words:
+        # Убираем дефисы для проверки, что остались только буквы
+        cleaned = word.replace("-", "")
+        word_type = "english" if (cleaned.isalpha() and word.isascii()) else "russian"
+
+        if current_type == word_type:
+            current_group.append(word)
+        else:
+            # Type changed, save previous group
+            if current_group:
+                if current_type == "english":
+                    english_parts.extend(current_group)
+                else:
+                    russian_parts.extend(current_group)
+
+            # Start new group
+            current_group = [word]
+            current_type = word_type
+
+    # Save last group
+    if current_group:
+        if current_type == "english":
+            english_parts.extend(current_group)
+        else:
+            russian_parts.extend(current_group)
+
+    return russian_parts, english_parts
+
+
 def parse_unstructured_text(text: str) -> Dict[str, str]:
     """Parses unstructured text using a non-destructive, prioritized, multi-pass strategy."""
     participant_data: Dict[str, str] = {}
@@ -546,10 +600,15 @@ def parse_unstructured_text(text: str) -> Dict[str, str]:
             participant_data["ContactInformation"] = contact
             consumed[i] = True
 
-    # --- Pass 4: Everything that is left is the name ---
+    # --- Pass 4: Smart name extraction with context analysis ---
     name_parts = [tokens[i] for i in range(len(tokens)) if not consumed[i]]
     if name_parts:
-        participant_data["FullNameRU"] = " ".join(name_parts)
+        russian_parts, english_parts = _smart_name_classification(name_parts)
+
+        if russian_parts:
+            participant_data["FullNameRU"] = " ".join(russian_parts)
+        if english_parts:
+            participant_data["FullNameEN"] = " ".join(english_parts)
 
     return participant_data
 
@@ -871,7 +930,7 @@ class ParticipantParser:
                 continue
             wu = word.strip(PUNCTUATION_CHARS).upper()
             if wu in self.israel_cities:
-                self.data["CountryAndCity"] = word
+                self.data["CountryAndCity"] = wu
                 self.processed_words.add(word)
 
     def _extract_church(self, all_words: list[str]):
@@ -891,7 +950,7 @@ class ParticipantParser:
                 ):
                     church_words.append(all_words[i - 1])
                     self.processed_words.add(all_words[i - 1])
-                church_words.append(word)
+                # Skip the keyword itself in the final value
                 self.processed_words.add(word)
                 if (
                     i < len(all_words) - 1
@@ -907,7 +966,13 @@ class ParticipantParser:
                     ):
                         church_words.append(all_words[i + 2])
                         self.processed_words.add(all_words[i + 2])
-                self.data["Church"] = " ".join(church_words)
+                # Remove any identifier words
+                cleaned = [
+                    w
+                    for w in church_words
+                    if w.upper() not in CHURCH_KEYWORDS
+                ]
+                self.data["Church"] = " ".join(cleaned)
                 return  # Нашли через ключевые слова - выходим
 
         # Если не нашли через ключевые слова - пробуем fuzzy matching
@@ -931,33 +996,20 @@ class ParticipantParser:
                         break
 
     def _extract_names(self, all_words: list[str]):
-        """
-        Извлекает русские и английские имена, классифицируя каждое слово
-        по используемому алфавиту (кириллица или латиница).
-        """
+        """Извлекает русские и английские имена с умной классификацией."""
 
         unprocessed_words = [w for w in all_words if w not in self.processed_words]
 
-        russian_parts = []
-        english_parts = []
+        if unprocessed_words:
+            russian_parts, english_parts = _smart_name_classification(unprocessed_words)
 
-        for word in unprocessed_words:
-            # Слово считается английским, если оно состоит только из базовых ASCII букв.
-            # isalpha() проверяет, что это буквы, а isascii() - что это латиница.
-            if word.isalpha() and word.isascii():
-                english_parts.append(word)
-            else:
-                # Все остальное (кириллица, слова с дефисами, смешанные слова)
-                # считаем частью русского имени.
-                russian_parts.append(word)
+            if russian_parts:
+                self.data["FullNameRU"] = " ".join(russian_parts)
+                self.processed_words.update(russian_parts)
 
-        if russian_parts:
-            self.data["FullNameRU"] = " ".join(russian_parts)
-            self.processed_words.update(russian_parts)
-
-        if english_parts:
-            self.data["FullNameEN"] = " ".join(english_parts)
-            self.processed_words.update(english_parts)
+            if english_parts:
+                self.data["FullNameEN"] = " ".join(english_parts)
+                self.processed_words.update(english_parts)
 
 
 def parse_participant_data(text: str, is_update: bool = False) -> Dict:
