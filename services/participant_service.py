@@ -101,6 +101,7 @@ def get_edit_keyboard(participant_data: Dict) -> InlineKeyboardMarkup:
             ),
         ],
     ]
+    buttons.append([InlineKeyboardButton("❌ Отмена", callback_data="main_cancel")])
     return InlineKeyboardMarkup(buttons)
 
 
