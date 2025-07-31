@@ -167,7 +167,7 @@ def get_duplicate_keyboard() -> InlineKeyboardMarkup:
             InlineKeyboardButton("✅ Добавить новый", callback_data="dup_add_new"),
             InlineKeyboardButton("🔄 Заменить", callback_data="dup_replace"),
         ],
-        [InlineKeyboardButton("❌ Отмена", callback_data="dup_cancel")],
+        [InlineKeyboardButton("❌ Отмена", callback_data="main_cancel")],
     ]
     return InlineKeyboardMarkup(keyboard)
 
@@ -218,20 +218,17 @@ def format_status_message(participant_data: Dict) -> str:
     return message
 
 
-# Команда /start
-@require_role("viewer")
-async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def _show_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Display the main menu for the current user."""
     user_id = update.effective_user.id
     role = get_user_role(user_id)
-    logger.info("User %s started /start", user_id)
 
     welcome_text = (
         "🏕️ **Добро пожаловать в бот Tres Dias Israel!**\n\n"
         f"👤 Ваша роль: **{role.title()}**"
     )
 
-    keyboard: list[list[InlineKeyboardButton]] = []
-
+    keyboard: list[list[InlineKeyboardButton]]
     if user_id in COORDINATOR_IDS:
         keyboard = [
             [
@@ -254,11 +251,20 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     reply_markup = InlineKeyboardMarkup(keyboard)
 
-    await update.message.reply_text(
+    await update.effective_message.reply_text(
         welcome_text,
         parse_mode="Markdown",
         reply_markup=reply_markup,
     )
+
+
+
+# Команда /start
+@require_role("viewer")
+async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Entry point that shows the main menu."""
+    logger.info("User %s started /start", update.effective_user.id)
+    await _show_main_menu(update, context)
 
 
 @require_role("coordinator")
@@ -283,6 +289,10 @@ async def handle_add_callback(
         "ContactInformation": None,
     }
 
+    cancel_markup = InlineKeyboardMarkup(
+        [[InlineKeyboardButton("❌ Отмена", callback_data="main_cancel")]]
+    )
+
     await query.message.reply_text(
         "🚀 **Начинаем добавлять нового участника.**\n\n"
         "Отправьте данные любым удобным способом:\n"
@@ -292,6 +302,7 @@ async def handle_add_callback(
         "*Для самой точной обработки используйте запятые или ввод с новой строки.*\n"
         "Для отмены введите /cancel.",
         parse_mode="Markdown",
+        reply_markup=cancel_markup,
     )
     await query.message.reply_text(MESSAGES["ADD_TEMPLATE"])
     return COLLECTING_DATA
@@ -452,6 +463,10 @@ async def add_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
         "ContactInformation": None,
     }
 
+    cancel_markup = InlineKeyboardMarkup(
+        [[InlineKeyboardButton("❌ Отмена", callback_data="main_cancel")]]
+    )
+
     await update.message.reply_text(
         "🚀 **Начинаем добавлять нового участника.**\n\n"
         "Отправьте данные любым удобным способом:\n"
@@ -461,6 +476,7 @@ async def add_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
         "*Для самой точной обработки используйте запятые или ввод с новой строки.*\n"
         "Для отмены введите /cancel.",
         parse_mode="Markdown",
+        reply_markup=cancel_markup,
     )
     await update.message.reply_text(MESSAGES["ADD_TEMPLATE"])
     return COLLECTING_DATA
@@ -532,7 +548,12 @@ async def handle_partial_data(
         return CONFIRMING_DATA
     else:
         status_message = format_status_message(participant_data)
-        await update.message.reply_text(status_message, parse_mode="Markdown")
+        cancel_markup = InlineKeyboardMarkup(
+            [[InlineKeyboardButton("❌ Отмена", callback_data="main_cancel")]]
+        )
+        await update.message.reply_text(
+            status_message, parse_mode="Markdown", reply_markup=cancel_markup
+        )
         return COLLECTING_DATA
 
 
@@ -666,16 +687,24 @@ async def export_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # Команда /cancel
 @require_role("viewer")
 async def cancel_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    if "add_flow_data" in context.user_data:
+    user_id = update.effective_user.id
+    if context.user_data:
         context.user_data.clear()
-        logger.info("User %s cancelled the add flow.", update.effective_user.id)
-        await update.message.reply_text("❌ Добавление отменено.")
+        logger.info("User %s cancelled the add flow.", user_id)
     else:
-        logger.info(
-            "User %s cancelled a non-existent operation.", update.effective_user.id
-        )
-        await update.message.reply_text("❌ Нет активной операции для отмены.")
+        logger.info("User %s cancelled a non-existent operation.", user_id)
 
+    await _show_main_menu(update, context)
+    return ConversationHandler.END
+
+
+async def cancel_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Handle cancel buttons and return to the main menu."""
+    query = update.callback_query
+    await query.answer()
+
+    cleanup_user_data_safe(context, update.effective_user.id)
+    await _show_main_menu(update, context)
     return ConversationHandler.END
 
 
@@ -1037,13 +1066,6 @@ async def handle_duplicate_callback(
         else:
             await query.message.reply_text("❌ Существующий участник не найден.")
 
-    else:  # dup_cancel
-        cleanup_user_data_safe(context, update.effective_user.id)
-        await query.message.reply_text(
-            "❌ Добавление участника отменено из-за дублирования.\n\n"
-            "Используйте /add для повторной попытки."
-        )
-
     return ConversationHandler.END
 
 
@@ -1089,7 +1111,10 @@ def main():
                 ),
             ],
         },
-        fallbacks=[CommandHandler("cancel", cancel_command)],
+        fallbacks=[
+            CommandHandler("cancel", cancel_command),
+            CallbackQueryHandler(cancel_callback, pattern="^main_cancel$")
+        ],
     )
 
     application.add_handler(add_conv)
