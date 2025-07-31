@@ -21,6 +21,118 @@ from utils.recognizers import (
 
 logger = logging.getLogger(__name__)
 
+
+def is_valid_email(email: str) -> bool:
+    """Проверяет корректность email адреса."""
+    if "@" not in email:
+        return False
+
+    try:
+        local, domain = email.rsplit("@", 1)
+    except ValueError:
+        return False
+
+    if not local:
+        return False
+
+    if not domain or "." not in domain:
+        return False
+
+    domain_parts = domain.split(".")
+    if len(domain_parts[-1]) < 2:
+        return False
+
+    if len(email) < 5 or len(email) > 254:
+        return False
+
+    invalid_chars = {" ", "\t", "\n", "\r"}
+    if any(char in email for char in invalid_chars):
+        return False
+
+    return True
+
+
+def is_valid_phone(phone: str) -> bool:
+    """Проверяет корректность израильского номера телефона."""
+    if not phone:
+        return False
+
+    # Оставляем только цифры и плюс
+    cleaned = "".join(c for c in phone if c.isdigit() or c == "+")
+    digits = "".join(c for c in cleaned if c.isdigit())
+
+    if len(digits) < 7:
+        return False
+
+    if len(digits) > 15:
+        return False
+
+    if len(set(digits)) == 1:
+        return False
+
+    # 1. Международный формат +972
+    if phone.startswith("+972"):
+        if len(digits) in (11, 12):
+            israeli_part = digits[3:]
+
+            mobile_prefixes = ["50", "52", "53", "54", "55", "58"]
+            if israeli_part[:2] in mobile_prefixes and len(israeli_part) == 9:
+                return True
+
+            landline_prefixes = ["2", "3", "4", "8", "9"]
+            if israeli_part[0] in landline_prefixes and len(israeli_part) == 8:
+                return True
+
+        return False
+
+    # 2. Местный израильский формат (без +972)
+    if digits.startswith("05"):
+        if len(digits) in [9, 10]:
+            mobile_codes = ["050", "052", "053", "054", "055", "058"]
+            if digits[:3] in mobile_codes:
+                return True
+        return False
+
+    if digits.startswith("0") and len(digits) == 9:
+        landline_prefixes = ["02", "03", "04", "08", "09"]
+        if digits[:2] in landline_prefixes:
+            return True
+        return False
+
+    # 3. Другие международные номера
+    if phone.startswith("+"):
+        if 7 <= len(digits) <= 15:
+            return True
+
+    # 4. Российские номера
+    if phone.startswith(("8", "7")) and len(digits) >= 10:
+        return True
+
+    # 5. Номера с форматированием
+    if len(digits) >= 7 and any(char in phone for char in ["-", "(", ")", " ", "."]):
+        formatting_chars = sum(1 for c in phone if c in "-()., ")
+        if formatting_chars <= len(digits):
+            return True
+
+    return False
+
+
+def extract_contact_info(word: str) -> Optional[str]:
+    """Извлекает и валидирует контактную информацию из токена."""
+    word = word.strip()
+
+    if not word:
+        return None
+
+    if "@" in word:
+        return word if is_valid_email(word) else None
+
+    if any(c.isdigit() for c in word):
+        return word if is_valid_phone(word) else None
+
+    return None
+
+
 CHURCH_KEYWORDS = ["ЦЕРКОВЬ", "CHURCH", "ХРАМ", "ОБЩИНА"]
 
 # Punctuation characters to strip when normalizing tokens
@@ -488,27 +600,12 @@ class ParticipantParser:
             if word in self.processed_words:
                 continue
 
-            if "@" in word and "." in word.split("@")[-1]:
-                if len(word) >= 5:
-                    self.data["ContactInformation"] = word
-                    self.processed_words.add(word)
-                    break
-
-            cleaned_phone = "".join(c for c in word if c.isdigit() or c == "+")
-            digit_count = sum(1 for c in cleaned_phone if c.isdigit())
-
-            if digit_count >= 7:
-                if (
-                    word.startswith(("+", "8", "7"))
-                    or digit_count >= 10
-                    or (
-                        digit_count >= 7
-                        and any(char in word for char in ["-", "(", ")", " "])
-                    )
-                ):
-                    self.data["ContactInformation"] = word
-                    self.processed_words.add(word)
-                    break
+            token = word.strip(PUNCTUATION_CHARS)
+            contact = extract_contact_info(token)
+            if contact:
+                self.data["ContactInformation"] = contact
+                self.processed_words.add(word)
+                break
 
     def _extract_gender(self, all_words: list[str]):
         """Извлекает пол участника."""
