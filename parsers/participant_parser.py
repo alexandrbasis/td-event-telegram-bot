@@ -174,19 +174,12 @@ class FuzzyMatcher:
 
             church_words = church_clean.split()
             for church_word in church_words:
-                similarity = self.calculate_similarity(
-                    token_clean, church_word
-                )
-                if (
-                    similarity > best_score
-                    and similarity >= self.similarity_threshold
-                ):
+                similarity = self.calculate_similarity(token_clean, church_word)
+                if similarity > best_score and similarity >= self.similarity_threshold:
                     best_match = church
                     best_score = similarity
 
-            full_similarity = self.calculate_similarity(
-                token_clean, church_clean
-            )
+            full_similarity = self.calculate_similarity(token_clean, church_clean)
             if (
                 full_similarity > best_score
                 and full_similarity >= self.similarity_threshold
@@ -196,9 +189,7 @@ class FuzzyMatcher:
 
         return (best_match, best_score) if best_match else None
 
-    def find_best_department_match(
-        self, token: str
-    ) -> Optional[tuple[str, float]]:
+    def find_best_department_match(self, token: str) -> Optional[tuple[str, float]]:
         """Находит наиболее похожий департамент."""
         best_match = None
         best_score = 0.0
@@ -215,13 +206,8 @@ class FuzzyMatcher:
                 if token_clean == synonym_clean:
                     return dept_name, 1.0
 
-                similarity = self.calculate_similarity(
-                    token_clean, synonym_clean
-                )
-                if (
-                    similarity > best_score
-                    and similarity >= self.similarity_threshold
-                ):
+                similarity = self.calculate_similarity(token_clean, synonym_clean)
+                if similarity > best_score and similarity >= self.similarity_threshold:
                     best_match = dept_name
                     best_score = similarity
 
@@ -274,14 +260,16 @@ def is_valid_phone(phone: str) -> bool:
     if cleaned.startswith("+972"):
         israeli_part = digits[3:]
         # Мобильные: +972-5X-XXX-XXXX (9 цифр после кода)
-        if israeli_part.startswith(("50", "52", "53", "54", "55", "58")) and len(
-            israeli_part
-        ) == 9:
+        if (
+            israeli_part.startswith(("50", "52", "53", "54", "55", "58"))
+            and len(israeli_part) == 9
+        ):
             return True
         # Стационарные: +972-X-XXX-XXXX или +972-XX-XXX-XXXX (8-9 цифр после кода)
-        if israeli_part.startswith(("2", "3", "4", "8", "9")) and 8 <= len(
-            israeli_part
-        ) <= 9:
+        if (
+            israeli_part.startswith(("2", "3", "4", "8", "9"))
+            and 8 <= len(israeli_part) <= 9
+        ):
             return True
         return False
 
@@ -477,9 +465,7 @@ def parse_unstructured_text(text: str) -> Dict[str, str]:
             if any(consumed[i : i + len(name_tokens)]):
                 continue
             # Compare lowercased tokens
-            if [t.lower() for t in chunk] == [
-                nt.lower() for nt in name_tokens
-            ]:
+            if [t.lower() for t in chunk] == [nt.lower() for nt in name_tokens]:
                 participant_data["Church"] = church_name_str.capitalize()
                 for j in range(i, i + len(name_tokens)):
                     consumed[j] = True
@@ -489,8 +475,7 @@ def parse_unstructured_text(text: str) -> Dict[str, str]:
                     consumed[i - 1] = True
                 elif (
                     i + len(name_tokens) < len(tokens)
-                    and tokens[i + len(name_tokens)].lower()
-                    in church_identifiers
+                    and tokens[i + len(name_tokens)].lower() in church_identifiers
                 ):
                     consumed[i + len(name_tokens)] = True
                 break
@@ -774,9 +759,7 @@ class ParticipantParser:
 
     def _extract_submitted_by(self, text: str):
         """Извлекает информацию о том, кто подал заявку."""
-        match = re.search(
-            r"от\s+([А-ЯЁA-Z][А-Яа-яёA-Za-z\s]+)", text, re.IGNORECASE
-        )
+        match = re.search(r"от\s+([А-ЯЁA-Z][А-Яа-яёA-Za-z\s]+)", text, re.IGNORECASE)
         if match:
             full_match = match.group(1).strip()
             words = full_match.split()
@@ -832,10 +815,7 @@ class ParticipantParser:
                 continue
             wu = word.strip(PUNCTUATION_CHARS).upper()
 
-            if (
-                wu in field_normalizer.GENDER_MAPPINGS["M"]
-                and not gender_explicit
-            ):
+            if wu in field_normalizer.GENDER_MAPPINGS["M"] and not gender_explicit:
                 if wu == "M":
                     context = ConflictContext(
                         token=word,
@@ -847,9 +827,7 @@ class ParticipantParser:
                         already_found_size=bool(self.data.get("Size")),
                     )
 
-                    gender_value, size_value = resolver.resolve_m_conflict(
-                        context
-                    )
+                    gender_value, size_value = resolver.resolve_m_conflict(context)
 
                     if gender_value:
                         self.data["Gender"] = gender_value
@@ -922,6 +900,13 @@ class ParticipantParser:
                 ):
                     church_words.append(all_words[i + 1])
                     self.processed_words.add(all_words[i + 1])
+                    if (
+                        i < len(all_words) - 2
+                        and all_words[i + 2] not in self.processed_words
+                        and not contains_hebrew(all_words[i + 2])
+                    ):
+                        church_words.append(all_words[i + 2])
+                        self.processed_words.add(all_words[i + 2])
                 self.data["Church"] = " ".join(church_words)
                 return  # Нашли через ключевые слова - выходим
 
@@ -946,18 +931,35 @@ class ParticipantParser:
                         break
 
     def _extract_names(self, all_words: list[str]):
-        unprocessed = [w for w in all_words if w not in self.processed_words]
-        russian_words = []
-        english_words = []
-        for word in unprocessed:
-            if word.isalpha() and all(ord(c) < 128 for c in word):
-                english_words.append(word)
-            else:
-                russian_words.append(word)
-        if russian_words:
-            self.data["FullNameRU"] = " ".join(russian_words[:2])
-        if english_words:
-            self.data["FullNameEN"] = " ".join(english_words[:2])
+        """
+        Extracts Russian and English names from a list of words.
+        It assumes that Russian name words come first, followed by English ones.
+        """
+        unprocessed_words = [w for w in all_words if w not in self.processed_words]
+
+        russian_name_parts = []
+        english_name_parts = []
+
+        switched_to_english = False
+
+        for word in unprocessed_words:
+            is_english = word.isalpha() and all(ord(c) < 128 for c in word)
+
+            if is_english and not switched_to_english:
+                switched_to_english = True
+
+            if switched_to_english and is_english:
+                english_name_parts.append(word)
+            elif not switched_to_english:
+                russian_name_parts.append(word)
+
+        if russian_name_parts:
+            self.data["FullNameRU"] = " ".join(russian_name_parts)
+            self.processed_words.update(russian_name_parts)
+
+        if english_name_parts:
+            self.data["FullNameEN"] = " ".join(english_name_parts)
+            self.processed_words.update(english_name_parts)
 
 
 def parse_participant_data(text: str, is_update: bool = False) -> Dict:

@@ -205,6 +205,12 @@ class ParserTestCase(unittest.TestCase):
         result = parse_participant_data("Иван Петров 12345")
         self.assertEqual(result["ContactInformation"], "")
 
+    def test_mixed_russian_english_names(self):
+        text = "Василий Петров John Smith M L церковь Грейс кандидат"
+        data = parse_participant_data(text)
+        self.assertEqual(data["FullNameRU"], "Василий Петров")
+        self.assertEqual(data["FullNameEN"], "John Smith")
+
 
 if __name__ == "__main__":
     unittest.main()
