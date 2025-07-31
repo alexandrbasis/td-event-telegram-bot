@@ -173,10 +173,23 @@ async def show_confirmation(
     update: Update, context: ContextTypes.DEFAULT_TYPE, participant_data: Dict
 ) -> None:
     """Отправляет сообщение с данными участника и клавиатурой для редактирования."""
+    # Debug output for troubleshooting confirmation state
+    user_id = update.effective_user.id
+    logger.info(
+        f"show_confirmation called for user {user_id}, state should be CONFIRMING_DATA"
+    )
+    logger.info(f"user_data keys: {list(context.user_data.keys())}")
     confirmation_text = "🔍 Вот что удалось распознать. Всё правильно?\n\n"
     confirmation_text += format_participant_block(participant_data)
     confirmation_text += '\n\n✅ Нажмите "Сохранить", чтобы завершить, или выберите поле для исправления.'
     keyboard = get_edit_keyboard(participant_data)
+    # Log generated keyboard details
+    logger.info(f"Generated keyboard with {len(keyboard.inline_keyboard)} rows")
+    for i, row in enumerate(keyboard.inline_keyboard):
+        for j, button in enumerate(row):
+            logger.info(
+                f"Button [{i}][{j}]: text='{button.text}', callback_data='{button.callback_data}'"
+            )
 
     msg = await update.message.reply_text(
         confirmation_text,
@@ -578,6 +591,11 @@ async def handle_partial_data(
 
     if not missing_fields:
         context.user_data["parsed_participant"] = participant_data
+
+        # Debug: verify that participant data is stored correctly
+        logger.info(f"Saving participant data: {participant_data}")
+        logger.info(f"user_data after save: {context.user_data}")
+
         await show_confirmation(update, context, participant_data)
         return CONFIRMING_DATA
     else:
@@ -741,6 +759,12 @@ async def cancel_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 async def cancel_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Handle cancel buttons and return to the main menu."""
     query = update.callback_query
+    user_id = update.effective_user.id
+
+    # Debug output for troubleshooting cancel flow
+    logger.info(f"cancel_callback called for user {user_id}")
+    logger.info(f"callback_data: {query.data}")
+
     await query.answer()
 
     await _cleanup_messages(context, update.effective_chat.id)
@@ -860,13 +884,38 @@ async def process_participant_confirmation(
     return CONFIRMING_DATA
 
 
+# TEST handler to verify save button callbacks
+async def test_save_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    user_id = update.effective_user.id
+    logger.info(f"TEST: Save button clicked by user {user_id}")
+    await query.answer("✅ Кнопка 'Сохранить' работает!")
+    await query.message.reply_text("🧪 Тест пройден - кнопка реагирует")
+
+
 @require_role("coordinator")
-@cleanup_on_error
+# @cleanup_on_error  # Temporarily disabled to debug state loss
 async def handle_save_confirmation(
     update: Update, context: ContextTypes.DEFAULT_TYPE
 ) -> int:
     """Handles the final confirmation via the 'Save' button."""
     query = update.callback_query
+    user_id = update.effective_user.id
+
+    # Debug output for troubleshooting save confirmation
+    logger.info(f"handle_save_confirmation called for user {user_id}")
+    logger.info(f"callback_data: {query.data}")
+    logger.info(f"user_data keys: {list(context.user_data.keys())}")
+
+    # Verify state before proceeding
+    if "parsed_participant" not in context.user_data:
+        logger.error(f"No parsed_participant in user_data for user {user_id}")
+        await query.answer("❌ Данные потеряны, начните заново")
+        await query.message.reply_text(
+            "❌ Произошла ошибка. Попробуйте снова с /add"
+        )
+        return ConversationHandler.END
+
     await query.answer()
     await _cleanup_messages(context, update.effective_chat.id)
 
@@ -1068,10 +1117,6 @@ def main():
     # Создаем приложение
     application = Application.builder().token(BOT_TOKEN).build()
 
-    # Регистрируем обработчики команд
-    application.add_handler(CommandHandler("start", start_command))
-    application.add_handler(CommandHandler("help", help_command))
-
     add_conv = ConversationHandler(
         entry_points=[
             CommandHandler("add", add_command),
@@ -1082,9 +1127,10 @@ def main():
                 MessageHandler(filters.TEXT & ~filters.COMMAND, handle_partial_data)
             ],
             CONFIRMING_DATA: [
-                CallbackQueryHandler(
-                    handle_save_confirmation, pattern="^confirm_save$"
-                ),
+                # CallbackQueryHandler(
+                #     handle_save_confirmation, pattern="^confirm_save$"
+                # ),
+                CallbackQueryHandler(test_save_button, pattern="^confirm_save$"),  # TEST
                 MessageHandler(
                     filters.TEXT & ~filters.COMMAND, handle_participant_confirmation
                 ),
@@ -1099,8 +1145,12 @@ def main():
             CallbackQueryHandler(cancel_callback, pattern="^main_cancel$"),
         ],
     )
-
+    # ConversationHandler должен быть зарегистрирован первым
     application.add_handler(add_conv)
+
+    # Регистрируем обработчики команд
+    application.add_handler(CommandHandler("start", start_command))
+    application.add_handler(CommandHandler("help", help_command))
     application.add_handler(
         CallbackQueryHandler(
             handle_main_menu_callback, pattern="^main_(list|export|help|menu)$"
@@ -1117,6 +1167,16 @@ def main():
     application.add_handler(
         MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message)
     )
+
+    # Временный отладочный обработчик для всех остальных callback-запросов
+    async def debug_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        query = update.callback_query
+        user_id = update.effective_user.id
+        logger.warning(f"Unhandled callback from user {user_id}: {query.data}")
+        await query.answer("⚠️ Обработчик не найден")
+
+    # Добавляем после всех других обработчиков
+    application.add_handler(CallbackQueryHandler(debug_callback_handler))
 
     # Обработчик ошибок
     application.add_error_handler(error_handler)
