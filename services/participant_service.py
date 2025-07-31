@@ -45,14 +45,29 @@ FIELD_EMOJIS = {
 def merge_participant_data(
     existing_data: Union[Participant, Dict], updates: Dict
 ) -> Dict:
-    """Merge existing participant data with new values."""
+    """Merge existing participant data with new values.
+
+    Business rules:
+    - Explicit values from ``updates`` override existing ones.
+    - If the role changes from ``TEAM`` to ``CANDIDATE`` the ``Department``
+      field must be cleared automatically.
+    """
+
     if isinstance(existing_data, Participant):
         merged = asdict(existing_data)
     else:
         merged = existing_data.copy()
+
+    old_role = merged.get("Role")
+
     for key, value in updates.items():
         if value is not None and value != "":
             merged[key] = value
+
+    # Auto clear department if role switched from TEAM to CANDIDATE
+    if old_role == "TEAM" and merged.get("Role") == "CANDIDATE":
+        merged["Department"] = ""
+
     return merged
 
 
@@ -107,14 +122,42 @@ def get_edit_keyboard(participant_data: Dict) -> InlineKeyboardMarkup:
 
 
 def detect_changes(old: Dict, new: Dict) -> List[str]:
-    """Return human readable list of changes."""
+    """Return human readable list of changes.
+
+    Additionally handles the business rule that switching a participant's role
+    from ``TEAM`` to ``CANDIDATE`` should clear the ``Department`` field and be
+    reflected as a change.
+    """
+
     changes = []
+
+    role_changed_to_candidate = (
+        old.get("Role") == "TEAM" and new.get("Role") == "CANDIDATE"
+    )
+
     for field, new_value in new.items():
         old_value = old.get(field, "")
+
+        # When role changes to CANDIDATE the Department is implicitly cleared
+        if field == "Department" and role_changed_to_candidate:
+            new_value = ""
+
         if new_value != old_value:
             label = FIELD_LABELS.get(field, field)
             emoji = FIELD_EMOJIS.get(field, "")
-            changes.append(f"{emoji} **{label}:** {old_value or '—'} → {new_value}")
+            changes.append(
+                f"{emoji} **{label}:** {old_value or '—'} → {new_value or '—'}"
+            )
+
+    # If the role changed to CANDIDATE and no Department was supplied in ``new``
+    # we still need to show that the Department was cleared
+    if role_changed_to_candidate and "Department" not in new:
+        old_value = old.get("Department", "")
+        if old_value:
+            label = FIELD_LABELS.get("Department", "Department")
+            emoji = FIELD_EMOJIS.get("Department", "")
+            changes.append(f"{emoji} **{label}:** {old_value or '—'} → —")
+
     return changes
 
 

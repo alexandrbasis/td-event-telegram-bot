@@ -424,10 +424,15 @@ def parse_template_format(text: str) -> Dict:
         key, value = item.split(":", 1)
         key = key.strip()
         value = value.strip()
+        explicit_empty = False
         if value in ["➖ Не указано", "❌ Не указано"]:
             value = ""
+            explicit_empty = True
         for ru, eng in TEMPLATE_FIELD_MAP.items():
             if key.lower() == ru.lower():
+                if not value and not explicit_empty:
+                    # Skip unspecified values so we don't overwrite existing data
+                    break
                 norm = value or ""
                 if eng == "Gender":
                     norm = normalize_gender(value) or ""
@@ -813,8 +818,8 @@ class ParticipantParser:
         self._extract_names(all_words)
 
     def _postprocess_data(self):
-        if not self.data.get("Gender"):
-            self.data["Gender"] = "F"
+        """Finalize parsing results without forcing default values."""
+        pass
 
     def _extract_submitted_by(self, text: str):
         """Извлекает информацию о том, кто подал заявку."""

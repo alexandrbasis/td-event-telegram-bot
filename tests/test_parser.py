@@ -16,7 +16,7 @@ class ParserTestCase(unittest.TestCase):
         text = "Иван Петров M L церковь Новая Жизнь кандидат"
         data = parse_participant_data(text)
         self.assertEqual(data["FullNameRU"], "Иван Петров")
-        self.assertEqual(data["Gender"], "F")
+        self.assertEqual(data["Gender"], "")
         self.assertEqual(data["Size"], "M")
         self.assertEqual(data["Role"], "CANDIDATE")
 
@@ -128,7 +128,7 @@ class ParserTestCase(unittest.TestCase):
         data = parse_template_format(text)
         self.assertEqual(data["FullNameRU"], "Иван Петров")
         self.assertEqual(data["Gender"], "M")
-        self.assertEqual(data["Size"], "")
+        self.assertNotIn("Size", data)
         self.assertEqual(data["Church"], "Благодать")
 
     def test_parse_template_single_line_commas(self):
@@ -179,7 +179,7 @@ class ParserTestCase(unittest.TestCase):
     def test_m_gender_size_conflict_resolution(self):
         """Тест разрешения конфликта M между полом и размером"""
         result = parse_participant_data("Мария размер M церковь Грейс")
-        self.assertEqual(result["Gender"], "F")
+        self.assertEqual(result["Gender"], "")
         self.assertEqual(result["Size"], "M")
 
         result = parse_participant_data("Михаил пол M церковь Грейс")
