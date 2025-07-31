@@ -4,6 +4,7 @@ from parsers.participant_parser import (
     is_template_format,
     parse_template_format,
     parse_unstructured_text,
+    _smart_name_classification,
 )
 from utils.cache import load_reference_data, cache
 
@@ -30,8 +31,8 @@ class ParserTestCase(unittest.TestCase):
         data = parse_participant_data(text)
         self.assertEqual(data["Gender"], "F")
         self.assertEqual(data["Size"], "")
-        self.assertEqual(data["CountryAndCity"], "Афула")
-        self.assertEqual(data["Church"], "церковь Благодать")
+        self.assertEqual(data["CountryAndCity"], "АФУЛА")
+        self.assertEqual(data["Church"], "Благодать")
 
     def test_update_gender_only(self):
         text = "Пол женский"
@@ -62,8 +63,8 @@ class ParserTestCase(unittest.TestCase):
         self.assertEqual(data["Size"], "M")  # medium должен стать M
         self.assertEqual(data["Role"], "TEAM")
         self.assertEqual(data["Department"], "Administration")
-        self.assertEqual(data["Church"], "община грейс")
-        self.assertEqual(data["CountryAndCity"], "Хайфа")
+        self.assertEqual(data["Church"], "грейс")
+        self.assertEqual(data["CountryAndCity"], "ХАЙФА")
         self.assertEqual(data["SubmittedBy"], "Ирина Цой")  # без 'medium'
 
     def test_contact_validation(self):
@@ -211,6 +212,102 @@ class ParserTestCase(unittest.TestCase):
         self.assertEqual(data["FullNameRU"], "Василий Петров")
         self.assertEqual(data["FullNameEN"], "John Smith")
 
+    def test_mixed_names_single_input(self):
+        """Тест для имен на русском и английском в одной строке"""
+        text = (
+            "Аарон Басис Aaron Basis муж L церковь Благодать тим рое хайфа 0552953372"
+        )
+        data = parse_participant_data(text)
+
+        self.assertEqual(data["FullNameRU"], "Аарон Басис")
+        self.assertEqual(data["FullNameEN"], "Aaron Basis")
+        self.assertEqual(data["Gender"], "M")
+        self.assertEqual(data["Size"], "L")
+        self.assertEqual(data["Church"], "Благодать")
+        self.assertEqual(data["Role"], "TEAM")
+        self.assertEqual(data["Department"], "ROE")
+        self.assertEqual(data["CountryAndCity"], "ХАЙФА")
+        self.assertEqual(data["ContactInformation"], "0552953372")
+
+    def test_smart_name_classification_edge_cases(self):
+        """Тест edge cases для умной классификации имен"""
+        # Случай 1: Только русское имя
+        text1 = "Иван Петров муж L церковь Грейс"
+        data1 = parse_participant_data(text1)
+        self.assertEqual(data1["FullNameRU"], "Иван Петров")
+        self.assertEqual(data1["FullNameEN"], "")
+
+        # Случай 2: Только английское имя (транслитерация)
+        text2 = "Sergey Ivanov муж L церковь Грейс"
+        data2 = parse_participant_data(text2)
+        self.assertEqual(data2["FullNameRU"], "")
+        self.assertEqual(data2["FullNameEN"], "Sergey Ivanov")
+
+        # Случай 3: Сложный случай с группировкой
+        text3 = "Мария Анна Mary Ann Сидорова Johnson жен M церковь Благодать"
+        data3 = parse_participant_data(text3)
+        self.assertEqual(data3["FullNameRU"], "Мария Анна Сидорова")
+        self.assertEqual(data3["FullNameEN"], "Mary Ann Johnson")
+
+    def test_name_with_hyphens_and_special_chars(self):
+        """Тест имен с дефисами и специальными символами"""
+        text = (
+            "Анна-Мария Петрова-Сидорова Anne-Marie Johnson жен S церковь Грейс"
+        )
+        data = parse_participant_data(text)
+
+        self.assertEqual(data["FullNameRU"], "Анна-Мария Петрова-Сидорова")
+        self.assertEqual(data["FullNameEN"], "Anne-Marie Johnson")
+
+
+class SmartNameClassificationTestCase(unittest.TestCase):
+    def test_simple_cases(self):
+        """Тест простых случаев (1-2 слова)"""
+        # Только русские
+        ru, en = _smart_name_classification(["Иван", "Петров"])
+        self.assertEqual(ru, ["Иван", "Петров"])
+        self.assertEqual(en, [])
+
+        # Только английские
+        ru, en = _smart_name_classification(["John", "Smith"])
+        self.assertEqual(ru, [])
+        self.assertEqual(en, ["John", "Smith"])
+
+        # Смешанные
+        ru, en = _smart_name_classification(["John", "Иванов"])
+        self.assertEqual(ru, ["Иванов"])
+        self.assertEqual(en, ["John"])
+
+    def test_complex_grouping(self):
+        """Тест сложных случаев с группировкой"""
+        # Русские + английские блоки
+        words = ["Мария", "Анна", "Mary", "Ann", "Петрова", "Johnson"]
+        ru, en = _smart_name_classification(words)
+        self.assertEqual(ru, ["Мария", "Анна", "Петрова"])
+        self.assertEqual(en, ["Mary", "Ann", "Johnson"])
+
+        # Перемешанные блоки
+        words2 = ["John", "Иван", "Smith", "Петров"]
+        ru2, en2 = _smart_name_classification(words2)
+        self.assertEqual(ru2, ["Иван", "Петров"])
+        self.assertEqual(en2, ["John", "Smith"])
+
+    def test_edge_cases(self):
+        """Тест граничных случаев"""
+        # Пустой список
+        ru, en = _smart_name_classification([])
+        self.assertEqual(ru, [])
+        self.assertEqual(en, [])
+
+        # Одно слово
+        ru, en = _smart_name_classification(["Иван"])
+        self.assertEqual(ru, ["Иван"])
+        self.assertEqual(en, [])
+
+        # Слова с дефисами
+        ru, en = _smart_name_classification(["Анна-Мария", "Anne-Marie"])
+        self.assertEqual(ru, ["Анна-Мария"])
+        self.assertEqual(en, ["Anne-Marie"])
 
 if __name__ == "__main__":
     unittest.main()
