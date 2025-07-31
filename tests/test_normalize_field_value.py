@@ -1,8 +1,7 @@
 import unittest
 from parsers.participant_parser import normalize_field_value
-from utils.cache import load_reference_data
 
-load_reference_data()
+# Нормализатор инициализируется автоматически, не нужно загружать кэш
 
 class NormalizeFieldValueTestCase(unittest.TestCase):
     def test_unknown_department(self):

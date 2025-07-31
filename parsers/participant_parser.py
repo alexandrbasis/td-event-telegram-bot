@@ -2,12 +2,12 @@ from typing import Dict, Optional, List
 import re
 import logging
 
-from constants import (
-    GENDER_KEYWORDS,
-    ROLE_KEYWORDS,
-    SIZES,
-    Gender,
-    Role,
+from utils.field_normalizer import (
+    field_normalizer,
+    normalize_gender,
+    normalize_role,
+    normalize_size,
+    normalize_department,
 )
 from utils.cache import cache
 from utils.recognizers import (
@@ -21,99 +21,94 @@ from utils.recognizers import (
 
 logger = logging.getLogger(__name__)
 
-CHURCH_KEYWORDS = ['ЦЕРКОВЬ', 'CHURCH', 'ХРАМ', 'ОБЩИНА']
+CHURCH_KEYWORDS = ["ЦЕРКОВЬ", "CHURCH", "ХРАМ", "ОБЩИНА"]
 
 # Punctuation characters to strip when normalizing tokens
-PUNCTUATION_CHARS = '.,!?:;'
+PUNCTUATION_CHARS = ".,!?:;"
 
-# Mapping of size synonyms to their canonical values
-SIZE_KEYWORDS_MAP = {
-    'XS': {'XS', 'EXTRA SMALL', 'EXTRASMALL'},
-    'S': {'S', 'SMALL'},
-    'M': {'M', 'MEDIUM'},
-    'L': {'L', 'LARGE'},
-    'XL': {'XL', 'EXTRA LARGE', 'EXTRALARGE'},
-    'XXL': {'XXL', '2XL', 'EXTRA EXTRA LARGE'},
-    '3XL': {'3XL', 'XXXL'},
+# Pre-computed synonym sets for performance
+GENDER_SYNONYMS = {
+    syn.upper()
+    for synonyms in field_normalizer.GENDER_MAPPINGS.values()
+    for syn in synonyms
+}
+SIZE_SYNONYMS = {
+    syn.upper()
+    for synonyms in field_normalizer.SIZE_MAPPINGS.values()
+    for syn in synonyms
+}
+ROLE_SYNONYMS = {
+    syn.upper()
+    for synonyms in field_normalizer.ROLE_MAPPINGS.values()
+    for syn in synonyms
 }
 
 
-def _norm_token(token: str) -> str:
-    """Strip punctuation and convert to upper case."""
-    return token.strip(PUNCTUATION_CHARS).upper()
-
-
-NORMALIZED_SIZES = {_norm_token(s) for synonyms in SIZE_KEYWORDS_MAP.values() for s in synonyms}
-
-
-def _norm_gender(value: str) -> Optional[str]:
-    val = _norm_token(value)
-    if val in GENDER_KEYWORDS['M']:
-        return 'M'
-    if val in GENDER_KEYWORDS['F']:
-        return 'F'
-    return None
-
-
-def _norm_role(value: str) -> Optional[str]:
-    val = _norm_token(value)
-    if val in ROLE_KEYWORDS['TEAM']:
-        return 'TEAM'
-    if val in ROLE_KEYWORDS['CANDIDATE']:
-        return 'CANDIDATE'
-    return None
-
-
-def _norm_department(value: str, dept_keywords: Dict[str, list]) -> Optional[str]:
-    val = _norm_token(value)
-    for dept, keys in dept_keywords.items():
-        if val in [k.upper() for k in keys]:
-            return dept
-    return None
-
-
-def _norm_size(value: str) -> Optional[str]:
-    val = _norm_token(value)
-    for canon, keys in SIZE_KEYWORDS_MAP.items():
-        if val in {k.upper() for k in keys}:
-            return canon
-    return None
-
 # Служебные слова, которые встречаются в блоке подтверждения
 CONFIRMATION_NOISE_WORDS = {
-    'ВОТ', 'ЧТО', 'Я', 'ПОНЯЛ', 'ИЗ', 'ВАШИХ', 'ДАННЫХ', 'ИМЯ', 'РУС', 'АНГЛ',
-    'ПОЛ', 'РАЗМЕР', 'ГОРОД', 'КТО', 'ПОДАЛ', 'КОНТАКТЫ', 'НЕ', 'УКАЗАНО', 'РОЛЬ',
-    'ДЕПАРТАМЕНТ', 'ВСЕГО', 'ПРАВИЛЬНО', 'ОТПРАВЬТЕ', 'ДА', 'ДЛЯ', 'СОХРАНЕНИЯ',
-    'НЕТ', 'ОТМЕНЫ', 'ИЛИ', 'ПРИШЛИТЕ', 'ИСПРАВЛЕННЫЕ', 'ПО', 'ТЕМПЛЕЙТУ',
-    'ПОЛНОЙ', 'CANCEL'
+    "ВОТ",
+    "ЧТО",
+    "Я",
+    "ПОНЯЛ",
+    "ИЗ",
+    "ВАШИХ",
+    "ДАННЫХ",
+    "ИМЯ",
+    "РУС",
+    "АНГЛ",
+    "ПОЛ",
+    "РАЗМЕР",
+    "ГОРОД",
+    "КТО",
+    "ПОДАЛ",
+    "КОНТАКТЫ",
+    "НЕ",
+    "УКАЗАНО",
+    "РОЛЬ",
+    "ДЕПАРТАМЕНТ",
+    "ВСЕГО",
+    "ПРАВИЛЬНО",
+    "ОТПРАВЬТЕ",
+    "ДА",
+    "ДЛЯ",
+    "СОХРАНЕНИЯ",
+    "НЕТ",
+    "ОТМЕНЫ",
+    "ИЛИ",
+    "ПРИШЛИТЕ",
+    "ИСПРАВЛЕННЫЕ",
+    "ПО",
+    "ТЕМПЛЕЙТУ",
+    "ПОЛНОЙ",
+    "CANCEL",
 }
 
 # Подсказки для определения поля при исправлении
 FIELD_INDICATORS = {
-    'Gender': ['ПОЛ', 'GENDER'],
-    'Size': ['РАЗМЕР', 'SIZE'],
-    'Role': ['РОЛЬ', 'ROLE'],
-    'Department': ['ДЕПАРТАМЕНТ', 'DEPARTMENT'],
-    'Church': ['ЦЕРКОВЬ', 'CHURCH'],
-    'FullNameRU': ['ИМЯ', 'РУССКИЙ', 'NAME'],
-    'FullNameEN': ['АНГЛИЙСКИЙ', 'ENGLISH', 'АНГЛ'],
-    'CountryAndCity': ['ГОРОД', 'CITY', 'СТРАНА'],
-    'SubmittedBy': ['ПОДАЛ', 'SUBMITTED'],
-    'ContactInformation': ['КОНТАКТ', 'ТЕЛЕФОН', 'EMAIL', 'PHONE']
+    "Gender": ["ПОЛ", "GENDER"],
+    "Size": ["РАЗМЕР", "SIZE"],
+    "Role": ["РОЛЬ", "ROLE"],
+    "Department": ["ДЕПАРТАМЕНТ", "DEPARTMENT"],
+    "Church": ["ЦЕРКОВЬ", "CHURCH"],
+    "FullNameRU": ["ИМЯ", "РУССКИЙ", "NAME"],
+    "FullNameEN": ["АНГЛИЙСКИЙ", "ENGLISH", "АНГЛ"],
+    "CountryAndCity": ["ГОРОД", "CITY", "СТРАНА"],
+    "SubmittedBy": ["ПОДАЛ", "SUBMITTED"],
+    "ContactInformation": ["КОНТАКТ", "ТЕЛЕФОН", "EMAIL", "PHONE"],
 }
 
 # Поля шаблона и их соответствие ключам базы данных
 TEMPLATE_FIELD_MAP = {
-    'Имя (рус)': 'FullNameRU',
-    'Имя (англ)': 'FullNameEN',
-    'Пол': 'Gender',
-    'Размер': 'Size',
-    'Церковь': 'Church',
-    'Роль': 'Role',
-    'Департамент': 'Department',
-    'Город': 'CountryAndCity',
-    'Кто подал': 'SubmittedBy',
-    'Контакты': 'ContactInformation',
+    "Имя (рус)": "FullNameRU",
+    "Имя (англ)": "FullNameEN",
+    "Пол": "Gender",
+    "Размер": "Size",
+    "Церковь": "Church",
+    "Роль": "Role",
+    "Департамент": "Department",
+    "Город": "CountryAndCity",
+    "Кто подал": "SubmittedBy",
+    "Контакты": "ContactInformation",
 }
 
 
@@ -121,7 +116,7 @@ def is_template_format(text: str) -> bool:
     """Определяет, похоже ли сообщение на заполненный шаблон."""
     count = 0
     for field in TEMPLATE_FIELD_MAP.keys():
-        if re.search(fr'{re.escape(field)}\s*:', text, re.IGNORECASE):
+        if re.search(rf"{re.escape(field)}\s*:", text, re.IGNORECASE):
             count += 1
     result = count >= 3
     logger.debug("is_template_format=%s for text: %s", result, text)
@@ -132,32 +127,30 @@ def parse_template_format(text: str) -> Dict:
     """Парсит текст, оформленный по шаблону Ключ: Значение."""
     data: Dict = {}
     # Разделяем по переносу строк и возможным разделителям
-    parts = re.split(r'[\n;]+', text)
+    parts = re.split(r"[\n;]+", text)
     items = []
     for part in parts:
-        items.extend(part.split(','))
-
-    dept_keywords = cache.get("departments") or {}
+        items.extend(part.split(","))
 
     for item in items:
-        if ':' not in item:
+        if ":" not in item:
             continue
-        key, value = item.split(':', 1)
+        key, value = item.split(":", 1)
         key = key.strip()
         value = value.strip()
-        if value in ['➖ Не указано', '❌ Не указано']:
-            value = ''
+        if value in ["➖ Не указано", "❌ Не указано"]:
+            value = ""
         for ru, eng in TEMPLATE_FIELD_MAP.items():
             if key.lower() == ru.lower():
-                norm = value or ''
-                if eng == 'Gender':
-                    norm = _norm_gender(value) or ''
-                elif eng == 'Role':
-                    norm = _norm_role(value) or ''
-                elif eng == 'Department':
-                    norm = _norm_department(value, dept_keywords) or ''
-                elif eng == 'Size':
-                    norm = _norm_size(value) or ''
+                norm = value or ""
+                if eng == "Gender":
+                    norm = normalize_gender(value) or ""
+                elif eng == "Role":
+                    norm = normalize_role(value) or ""
+                elif eng == "Department":
+                    norm = normalize_department(value) or ""
+                elif eng == "Size":
+                    norm = normalize_size(value) or ""
                 data[eng] = norm
                 break
     logger.debug("parse_template_format parsed fields: %s", list(data.keys()))
@@ -174,18 +167,20 @@ def parse_unstructured_text(text: str) -> Dict[str, str]:
     # --- Pass 1: Match multi-word known church names (highest priority) ---
     known_churches = cache.get("churches") or []
     # Sort by number of words in name, descending, to match "Слово Жизни" before "Слово"
-    sorted_church_names = sorted(known_churches, key=lambda x: len(x.split()), reverse=True)
+    sorted_church_names = sorted(
+        known_churches, key=lambda x: len(x.split()), reverse=True
+    )
     for church_name_str in sorted_church_names:
         name_tokens = church_name_str.split()
         for i in range(len(tokens) - len(name_tokens) + 1):
             # Slice of tokens from the input to check for a match
-            chunk = tokens[i:i + len(name_tokens)]
+            chunk = tokens[i : i + len(name_tokens)]
             # Check if this chunk has already been consumed
-            if any(consumed[i:i + len(name_tokens)]):
+            if any(consumed[i : i + len(name_tokens)]):
                 continue
             # Compare lowercased tokens
             if [t.lower() for t in chunk] == [nt.lower() for nt in name_tokens]:
-                participant_data['Church'] = church_name_str.capitalize()
+                participant_data["Church"] = church_name_str.capitalize()
                 for j in range(i, i + len(name_tokens)):
                     consumed[j] = True
                 # Consume a nearby church identifier if present to avoid it ending up in the name
@@ -198,42 +193,46 @@ def parse_unstructured_text(text: str) -> Dict[str, str]:
                 ):
                     consumed[i + len(name_tokens)] = True
                 break
-        if 'Church' in participant_data:
+        if "Church" in participant_data:
             break
 
     # --- Pass 2: Match "keyword + value" pattern for churches (e.g., "церковь Грейс") ---
     # This runs only if we haven't already found a church
     church_identifiers = {kw.lower() for kw in CHURCH_KEYWORDS}
-    if 'Church' not in participant_data:
+    if "Church" not in participant_data:
         for i in range(len(tokens) - 1):
-            if not consumed[i] and not consumed[i + 1] and tokens[i].lower() in church_identifiers:
-                participant_data['Church'] = tokens[i + 1].capitalize()
+            if (
+                not consumed[i]
+                and not consumed[i + 1]
+                and tokens[i].lower() in church_identifiers
+            ):
+                participant_data["Church"] = tokens[i + 1].capitalize()
                 consumed[i] = True  # Consume the identifier (e.g., "церковь")
                 consumed[i + 1] = True  # Consume the name
                 break
 
     # --- Pass 2.5: Match "keyword + value" for cities (e.g., "город Хайфа") ---
     city_identifiers = {"город", "из", "city", "from"}
-    if 'CountryAndCity' not in participant_data:
+    if "CountryAndCity" not in participant_data:
         for i in range(len(tokens) - 1):
             if (
                 not consumed[i]
                 and not consumed[i + 1]
                 and tokens[i].lower() in city_identifiers
             ):
-                participant_data['CountryAndCity'] = tokens[i + 1].capitalize()
+                participant_data["CountryAndCity"] = tokens[i + 1].capitalize()
                 consumed[i] = True
                 consumed[i + 1] = True
                 break
 
     # --- Pass 3: Match all other single-token fields ---
     recognizers = {
-        'Role': recognize_role,
-        'Gender': recognize_gender,
-        'Size': recognize_size,
-        'Department': recognize_department,
-        'CountryAndCity': recognize_city,
-        'Church': recognize_church,  # Fallback for single-word church names without identifier
+        "Role": recognize_role,
+        "Gender": recognize_gender,
+        "Size": recognize_size,
+        "Department": recognize_department,
+        "CountryAndCity": recognize_city,
+        "Church": recognize_church,  # Fallback for single-word church names without identifier
     }
     for i, token in enumerate(tokens):
         if consumed[i]:
@@ -251,74 +250,82 @@ def parse_unstructured_text(text: str) -> Dict[str, str]:
     # --- Pass 4: Everything that is left is the name ---
     name_parts = [tokens[i] for i in range(len(tokens)) if not consumed[i]]
     if name_parts:
-        participant_data['FullNameRU'] = " ".join(name_parts)
+        participant_data["FullNameRU"] = " ".join(name_parts)
 
     return participant_data
 
 
 def contains_hebrew(text: str) -> bool:
-    return any('\u0590' <= char <= '\u05FF' for char in text)
+    return any("\u0590" <= char <= "\u05ff" for char in text)
 
 
 def contains_emoji(text: str) -> bool:
     """Проверяет наличие эмодзи"""
     return any(
-        '\U0001F600' <= char <= '\U0001F64F' or  # Emoticons
-        '\U0001F300' <= char <= '\U0001F5FF' or  # Misc Symbols
-        '\U0001F680' <= char <= '\U0001F6FF' or  # Transport & Map
-        '\U0001F1E0' <= char <= '\U0001F1FF' or  # Regional
-        '\U00002600' <= char <= '\U000027BF' or  # Misc
-        '\U0001F900' <= char <= '\U0001F9FF'
+        "\U0001f600" <= char <= "\U0001f64f"  # Emoticons
+        or "\U0001f300" <= char <= "\U0001f5ff"  # Misc Symbols
+        or "\U0001f680" <= char <= "\U0001f6ff"  # Transport & Map
+        or "\U0001f1e0" <= char <= "\U0001f1ff"  # Regional
+        or "\U00002600" <= char <= "\U000027bf"  # Misc
+        or "\U0001f900" <= char <= "\U0001f9ff"
         for char in text
     )
 
 
 def clean_text_from_confirmation_block(text: str) -> str:
     """Удаляет эмодзи и служебные слова из текста подтверждения"""
-    cleaned = ''.join(ch for ch in text if not contains_emoji(ch))
-    cleaned = cleaned.replace('**', '').replace('*', '')
-    cleaned = cleaned.replace('🔍', '').replace('•', '')
+    cleaned = "".join(ch for ch in text if not contains_emoji(ch))
+    cleaned = cleaned.replace("**", "").replace("*", "")
+    cleaned = cleaned.replace("🔍", "").replace("•", "")
 
     field_labels = [
-        'Имя (рус)', 'Имя (англ)', 'Пол', 'Размер', 'Церковь',
-        'Роль', 'Департамент', 'Город', 'Кто подал', 'Контакты'
+        "Имя (рус)",
+        "Имя (англ)",
+        "Пол",
+        "Размер",
+        "Церковь",
+        "Роль",
+        "Департамент",
+        "Город",
+        "Кто подал",
+        "Контакты",
     ]
 
     for label in field_labels:
-        cleaned = re.sub(fr'{label}\s*:', '', cleaned, flags=re.IGNORECASE)
+        cleaned = re.sub(rf"{label}\s*:", "", cleaned, flags=re.IGNORECASE)
 
-    cleaned = cleaned.replace(':', '')
+    cleaned = cleaned.replace(":", "")
 
     words = cleaned.split()
     filtered = []
     for word in words:
-        w = word.strip('.,!?:;').upper()
+        w = word.strip(".,!?:;").upper()
         if (
-            w not in CONFIRMATION_NOISE_WORDS and
-            not w.startswith('➖') and
-            not w.startswith('❌') and
-            len(w) > 0
+            w not in CONFIRMATION_NOISE_WORDS
+            and not w.startswith("➖")
+            and not w.startswith("❌")
+            and len(w) > 0
         ):
             filtered.append(word)
 
-    return ' '.join(filtered)
+    return " ".join(filtered)
 
 
 def detect_field_update_intent(text: str) -> Optional[str]:
     """Определяет, какое поле хочет обновить пользователь"""
     text_upper = text.upper()
-    words = re.split(r'\s+', text_upper)
+    words = re.split(r"\s+", text_upper)
 
     for field, indicators in FIELD_INDICATORS.items():
         for ind in indicators:
             if ind in words:
                 return field
 
-    if any(word in GENDER_KEYWORDS['F'] + GENDER_KEYWORDS['M'] for word in words):
-        return 'Gender'
+    if any(word in GENDER_SYNONYMS for word in words):
+        return "Gender"
 
-    if any(word in SIZES for word in words):
-        return 'Size'
+    if any(word in SIZE_SYNONYMS for word in words):
+        return "Size"
 
     return None
 
@@ -329,48 +336,49 @@ def parse_field_update(text: str, field_hint: str) -> Dict:
     words = text_clean.split()
     update: Dict = {}
 
-    if field_hint == 'Gender':
+    if field_hint == "Gender":
         for word in words:
-            gender_val = _norm_gender(word)
+            gender_val = normalize_gender(word)
             if gender_val:
-                update['Gender'] = gender_val
+                update["Gender"] = gender_val
                 break
 
-    elif field_hint == 'Size':
+    elif field_hint == "Size":
         for word in words:
-            size_val = _norm_size(word)
+            size_val = normalize_size(word)
             if size_val:
-                update['Size'] = size_val
+                update["Size"] = size_val
                 break
 
-    elif field_hint == 'Role':
+    elif field_hint == "Role":
         for word in words:
-            role_val = _norm_role(word)
+            role_val = normalize_role(word)
             if role_val:
-                update['Role'] = role_val
+                update["Role"] = role_val
                 break
 
-    elif field_hint == 'Department':
-        dept_keywords = cache.get("departments") or {}
+    elif field_hint == "Department":
         for word in words:
-            dept_val = _norm_department(word, dept_keywords)
+            dept_val = normalize_department(word)
             if dept_val:
-                update['Department'] = dept_val
+                update["Department"] = dept_val
                 break
 
-    elif field_hint == 'Church':
+    elif field_hint == "Church":
         church_words = []
         for word in words:
-            if not any(kw in word.upper() for kw in CHURCH_KEYWORDS) and not contains_hebrew(word):
+            if not any(
+                kw in word.upper() for kw in CHURCH_KEYWORDS
+            ) and not contains_hebrew(word):
                 church_words.append(word)
         if church_words:
-            update['Church'] = ' '.join(church_words)
+            update["Church"] = " ".join(church_words)
 
-    elif field_hint == 'CountryAndCity':
+    elif field_hint == "CountryAndCity":
         cities = cache.get("cities") or []
         for word in words:
             if word.upper() in cities:
-                update['CountryAndCity'] = word
+                update["CountryAndCity"] = word
                 break
 
     return update
@@ -382,6 +390,14 @@ class ParticipantParser:
         self.processed_words: set[str] = set()
         self.department_keywords = cache.get("departments") or {}
         self.israel_cities = cache.get("cities") or []
+        # Cache synonym sets for performance
+        self._size_synonyms = SIZE_SYNONYMS
+        self._role_synonyms = ROLE_SYNONYMS
+        self._dept_synonyms = {
+            syn.upper()
+            for synonyms in self.department_keywords.values()
+            for syn in synonyms
+        }
 
     def parse(self, text: str, is_update: bool = False) -> Dict:
         """Основной метод парсинга."""
@@ -391,16 +407,16 @@ class ParticipantParser:
 
         all_words = text.split()
         self.data = {
-            'FullNameRU': '',
-            'Gender': 'F',
-            'Size': '',
-            'Church': '',
-            'Role': 'CANDIDATE',
-            'Department': '',
-            'FullNameEN': '',
-            'SubmittedBy': '',
-            'ContactInformation': '',
-            'CountryAndCity': ''
+            "FullNameRU": "",
+            "Gender": "F",
+            "Size": "",
+            "Church": "",
+            "Role": "CANDIDATE",
+            "Department": "",
+            "FullNameEN": "",
+            "SubmittedBy": "",
+            "ContactInformation": "",
+            "CountryAndCity": "",
         }
         self.processed_words = set()
 
@@ -410,7 +426,9 @@ class ParticipantParser:
         logger.debug("ParticipantParser result: %s", self.data)
         return self.data
 
-    def _preprocess_text(self, text: str, is_update: bool) -> tuple[str, Optional[Dict]]:
+    def _preprocess_text(
+        self, text: str, is_update: bool
+    ) -> tuple[str, Optional[Dict]]:
         text = text.strip()
         if is_template_format(text):
             logger.debug("Parsing using template format")
@@ -441,7 +459,7 @@ class ParticipantParser:
 
     def _extract_submitted_by(self, text: str):
         """Извлекает информацию о том, кто подал заявку."""
-        match = re.search(r'от\s+([А-ЯЁA-Z][А-Яа-яёA-Za-z\s]+)', text, re.IGNORECASE)
+        match = re.search(r"от\s+([А-ЯЁA-Z][А-Яа-яёA-Za-z\s]+)", text, re.IGNORECASE)
         if match:
             full_match = match.group(1).strip()
             words = full_match.split()
@@ -451,41 +469,44 @@ class ParticipantParser:
                 if word not in self.processed_words:
                     word_upper = word.upper()
                     if (
-                        word_upper not in SIZES and
-                        word_upper not in [k for keys in ROLE_KEYWORDS.values() for k in keys] and
-                        word_upper not in [k for keys in self.department_keywords.values() for k in keys]
+                        word_upper not in self._size_synonyms
+                        and word_upper not in self._role_synonyms
+                        and word_upper not in self._dept_synonyms
                     ):
                         valid_words.append(word)
                     else:
                         break
 
             if valid_words:
-                self.data['SubmittedBy'] = ' '.join(valid_words)
+                self.data["SubmittedBy"] = " ".join(valid_words)
                 for word in valid_words:
                     self.processed_words.add(word)
-                self.processed_words.add('от')
+                self.processed_words.add("от")
 
     def _extract_contacts(self, all_words: list[str]):
         for word in all_words:
             if word in self.processed_words:
                 continue
 
-            if '@' in word and '.' in word.split('@')[-1]:
+            if "@" in word and "." in word.split("@")[-1]:
                 if len(word) >= 5:
-                    self.data['ContactInformation'] = word
+                    self.data["ContactInformation"] = word
                     self.processed_words.add(word)
                     break
 
-            cleaned_phone = ''.join(c for c in word if c.isdigit() or c == '+')
+            cleaned_phone = "".join(c for c in word if c.isdigit() or c == "+")
             digit_count = sum(1 for c in cleaned_phone if c.isdigit())
 
             if digit_count >= 7:
                 if (
-                    word.startswith(('+', '8', '7')) or
-                    digit_count >= 10 or
-                    (digit_count >= 7 and any(char in word for char in ['-', '(', ')', ' ']))
+                    word.startswith(("+", "8", "7"))
+                    or digit_count >= 10
+                    or (
+                        digit_count >= 7
+                        and any(char in word for char in ["-", "(", ")", " "])
+                    )
                 ):
-                    self.data['ContactInformation'] = word
+                    self.data["ContactInformation"] = word
                     self.processed_words.add(word)
                     break
 
@@ -495,9 +516,9 @@ class ParticipantParser:
         for word in all_words:
             if word in self.processed_words:
                 continue
-            wu = _norm_token(word)
-            if wu in GENDER_KEYWORDS['F']:
-                self.data['Gender'] = 'F'
+            wu = word.strip(PUNCTUATION_CHARS).upper()
+            if wu in field_normalizer.GENDER_MAPPINGS["F"]:
+                self.data["Gender"] = "F"
                 gender_explicit = True
                 self.processed_words.add(word)
                 return
@@ -505,22 +526,22 @@ class ParticipantParser:
         for idx, word in enumerate(all_words):
             if word in self.processed_words:
                 continue
-            wu = _norm_token(word)
+            wu = word.strip(PUNCTUATION_CHARS).upper()
 
-            if wu in GENDER_KEYWORDS['M'] and not gender_explicit:
-                if wu == 'M' and not self.data.get('Size'):
+            if wu in field_normalizer.GENDER_MAPPINGS["M"] and not gender_explicit:
+                if wu == "M" and not self.data.get("Size"):
                     ctx = []
                     if idx > 0:
                         ctx.append(all_words[idx - 1].upper())
                     if idx < len(all_words) - 1:
                         ctx.append(all_words[idx + 1].upper())
 
-                    if any('РАЗМЕР' in c or 'SIZE' in c for c in ctx):
-                        self.data['Size'] = 'M'
+                    if any("РАЗМЕР" in c or "SIZE" in c for c in ctx):
+                        self.data["Size"] = "M"
                     else:
-                        self.data['Gender'] = 'M'
+                        self.data["Gender"] = "M"
                 else:
-                    self.data['Gender'] = 'M'
+                    self.data["Gender"] = "M"
                 self.processed_words.add(word)
                 break
 
@@ -528,39 +549,32 @@ class ParticipantParser:
         for word in all_words:
             if word in self.processed_words:
                 continue
-            wu = _norm_token(word)
-            if wu in NORMALIZED_SIZES:
-                size_val = _norm_size(word)
-                if size_val:
-                    self.data['Size'] = size_val
-                    self.processed_words.add(word)
+            size_val = normalize_size(word)
+            if size_val:
+                self.data["Size"] = size_val
+                self.processed_words.add(word)
 
     def _extract_role_and_department(self, all_words: list[str]):
         for word in all_words:
             if word in self.processed_words:
                 continue
-            wu = _norm_token(word)
-
-            if any(keyword == wu for keyword in ROLE_KEYWORDS['TEAM']):
-                self.data['Role'] = 'TEAM'
-                self.processed_words.add(word)
-            elif any(keyword == wu for keyword in ROLE_KEYWORDS['CANDIDATE']):
-                self.data['Role'] = 'CANDIDATE'
+            role_val = normalize_role(word)
+            if role_val:
+                self.data["Role"] = role_val
                 self.processed_words.add(word)
             elif not contains_hebrew(word):
-                for dept, keywords in self.department_keywords.items():
-                    if any(_norm_token(keyword) == wu for keyword in keywords):
-                        self.data['Department'] = dept
-                        self.processed_words.add(word)
-                        break
+                dept_val = normalize_department(word)
+                if dept_val:
+                    self.data["Department"] = dept_val
+                    self.processed_words.add(word)
 
     def _extract_city(self, all_words: list[str]):
         for word in all_words:
             if word in self.processed_words or contains_hebrew(word):
                 continue
-            wu = _norm_token(word)
+            wu = word.strip(PUNCTUATION_CHARS).upper()
             if wu in self.israel_cities:
-                self.data['CountryAndCity'] = word
+                self.data["CountryAndCity"] = word
                 self.processed_words.add(word)
 
     def _extract_church(self, all_words: list[str]):
@@ -571,22 +585,22 @@ class ParticipantParser:
             if any(keyword in word_upper for keyword in CHURCH_KEYWORDS):
                 church_words = []
                 if (
-                    i > 0 and
-                    all_words[i - 1] not in self.processed_words and
-                    not contains_hebrew(all_words[i - 1])
+                    i > 0
+                    and all_words[i - 1] not in self.processed_words
+                    and not contains_hebrew(all_words[i - 1])
                 ):
                     church_words.append(all_words[i - 1])
                     self.processed_words.add(all_words[i - 1])
                 church_words.append(word)
                 self.processed_words.add(word)
                 if (
-                    i < len(all_words) - 1 and
-                    all_words[i + 1] not in self.processed_words and
-                    not contains_hebrew(all_words[i + 1])
+                    i < len(all_words) - 1
+                    and all_words[i + 1] not in self.processed_words
+                    and not contains_hebrew(all_words[i + 1])
                 ):
                     church_words.append(all_words[i + 1])
                     self.processed_words.add(all_words[i + 1])
-                self.data['Church'] = ' '.join(church_words)
+                self.data["Church"] = " ".join(church_words)
                 break
 
     def _extract_names(self, all_words: list[str]):
@@ -599,9 +613,9 @@ class ParticipantParser:
             else:
                 russian_words.append(word)
         if russian_words:
-            self.data['FullNameRU'] = ' '.join(russian_words[:2])
+            self.data["FullNameRU"] = " ".join(russian_words[:2])
         if english_words:
-            self.data['FullNameEN'] = ' '.join(english_words[:2])
+            self.data["FullNameEN"] = " ".join(english_words[:2])
 
 
 def parse_participant_data(text: str, is_update: bool = False) -> Dict:
@@ -614,18 +628,16 @@ def normalize_field_value(field_name: str, value: str) -> str:
     """Нормализует одно значение для указанного поля."""
     value = value.strip()
 
-    if field_name == 'Department':
-        dept_keywords = cache.get("departments") or {}
-        return _norm_department(value, dept_keywords) or ''
+    if field_name == "Department":
+        return normalize_department(value) or ""
 
-    if field_name == 'Gender':
-        return _norm_gender(value) or ''
+    if field_name == "Gender":
+        return normalize_gender(value) or ""
 
-    if field_name == 'Size':
-        return _norm_size(value) or ''
+    if field_name == "Size":
+        return normalize_size(value) or ""
 
-    if field_name == 'Role':
-        return _norm_role(value) or 'CANDIDATE'
+    if field_name == "Role":
+        return normalize_role(value) or "CANDIDATE"
 
     return value
-

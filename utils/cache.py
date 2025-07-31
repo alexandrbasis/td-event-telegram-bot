@@ -11,13 +11,16 @@ class SimpleCache:
     def clear(self):
         self._cache.clear()
 
+
 cache = SimpleCache()
 
 
 def load_reference_data():
     """Load cities and departments into cache."""
-    from constants import DEPARTMENT_KEYWORDS, ISRAEL_CITIES
+    from constants import ISRAEL_CITIES
+    from utils.field_normalizer import field_normalizer
 
-    cache.set("departments", DEPARTMENT_KEYWORDS)
+    # Теперь департаменты берем из нормализатора
+    cache.set("departments", field_normalizer.DEPARTMENT_MAPPINGS)
     cache.set("cities", ISRAEL_CITIES)
-
+    cache.set("churches", [])  # Можно добавить известные церкви
