@@ -259,68 +259,46 @@ def is_valid_email(email: str) -> bool:
 
 
 def is_valid_phone(phone: str) -> bool:
-    """Проверяет корректность израильского номера телефона."""
+    """Проверяет, похож ли токен на телефонный номер, с корректной валидацией
+    израильских префиксов."""
     if not phone:
         return False
 
-    # Оставляем только цифры и плюс
     cleaned = "".join(c for c in phone if c.isdigit() or c == "+")
     digits = "".join(c for c in cleaned if c.isdigit())
 
-    if len(digits) < 7:
-        return False
-
-    if len(digits) > 15:
-        return False
-
-    if len(set(digits)) == 1:
+    if len(digits) < 7 or len(digits) > 15 or len(set(digits)) == 1:
         return False
 
     # 1. Международный формат +972
-    if phone.startswith("+972"):
-        if len(digits) in (11, 12):
-            israeli_part = digits[3:]
-
-            mobile_prefixes = ["50", "52", "53", "54", "55", "58"]
-            if israeli_part[:2] in mobile_prefixes and len(israeli_part) == 9:
-                return True
-
-            landline_prefixes = ["2", "3", "4", "8", "9"]
-            if israeli_part[0] in landline_prefixes and len(israeli_part) == 8:
-                return True
-
-        return False
-
-    # 2. Местный израильский формат (без +972)
-    if digits.startswith("05"):
-        if len(digits) in [9, 10]:
-            mobile_codes = ["050", "052", "053", "054", "055", "058"]
-            if digits[:3] in mobile_codes:
-                return True
-        return False
-
-    if digits.startswith("0") and len(digits) == 9:
-        landline_prefixes = ["02", "03", "04", "08", "09"]
-        if digits[:2] in landline_prefixes:
+    if cleaned.startswith("+972"):
+        israeli_part = digits[3:]
+        # Мобильные: +972-5X-XXX-XXXX (9 цифр после кода)
+        if israeli_part.startswith(("50", "52", "53", "54", "55", "58")) and len(
+            israeli_part
+        ) == 9:
+            return True
+        # Стационарные: +972-X-XXX-XXXX или +972-XX-XXX-XXXX (8-9 цифр после кода)
+        if israeli_part.startswith(("2", "3", "4", "8", "9")) and 8 <= len(
+            israeli_part
+        ) <= 9:
             return True
         return False
 
-    # 3. Другие международные номера
-    if phone.startswith("+"):
-        if 7 <= len(digits) <= 15:
+    # 2. Местный израильский формат
+    if cleaned.startswith("05") and len(cleaned) == 10:
+        if cleaned.startswith(("050", "052", "053", "054", "055", "058")):
             return True
+        return False
 
-    # 4. Российские номера
-    if phone.startswith(("8", "7")) and len(digits) >= 10:
+    if cleaned.startswith("0") and len(cleaned) == 9:
+        if cleaned.startswith(("02", "03", "04", "08", "09")):
+            return True
+        return False
+
+    # 3. Другие международные и российские номера
+    if cleaned.startswith("+") or cleaned.startswith(("7", "8")):
         return True
-
-    # 5. Номера с форматированием
-    if len(digits) >= 7 and any(
-        char in phone for char in ["-", "(", ")", " ", "."]
-    ):
-        formatting_chars = sum(1 for c in phone if c in "-()., ")
-        if formatting_chars <= len(digits):
-            return True
 
     return False
 
