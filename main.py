@@ -25,12 +25,12 @@ from parsers.participant_parser import (
     is_template_format,
     parse_template_format,
     parse_unstructured_text,
-    normalize_field_value,
 )
 from services.participant_service import (
     merge_participant_data,
     format_participant_block,
     detect_changes,
+    update_single_field,
     get_edit_keyboard,
     FIELD_LABELS,
 )
@@ -258,6 +258,17 @@ async def _cleanup_messages(context: ContextTypes.DEFAULT_TYPE, chat_id: int):
         context.user_data["messages_to_delete"].clear()
 
 
+async def clear_field_to_edit(context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Removes stale field editing context for a user."""
+    user_id = context.job.data
+    user_data = context.application.user_data.get(user_id, {})
+    if user_data.pop("field_to_edit", None):
+        logger.info("Cleared stale field_to_edit for user %s", user_id)
+    job = user_data.pop("clear_edit_job", None)
+    if job:
+        job.schedule_removal()
+
+
 # --- Конец вспомогательных функций ---
 
 
@@ -283,6 +294,9 @@ def setup_logging():
 setup_logging()
 
 logger = logging.getLogger(__name__)
+
+# Timeout in seconds to wait for user input when editing a specific field
+FIELD_EDIT_TIMEOUT = 300
 
 # Initialize repository and service instances
 participant_repository = SqliteParticipantRepository()
@@ -366,9 +380,24 @@ def get_post_action_keyboard() -> InlineKeyboardMarkup:
 def get_no_changes_keyboard() -> InlineKeyboardMarkup:
     """Keyboard shown when no changes were detected during editing."""
     keyboard = [
-        [InlineKeyboardButton("\ud83d\udd04 \u041f\u0440\u043e\u0434\u043e\u043b\u0436\u0438\u0442\u044c \u0440\u0435\u0434\u0430\u043a\u0442\u0438\u0440\u043e\u0432\u0430\u043d\u0438\u0435", callback_data="continue_editing")],
-        [InlineKeyboardButton("\u2705 \u0421\u043e\u0445\u0440\u0430\u043d\u0438\u0442\u044c \u043a\u0430\u043a \u0435\u0441\u0442\u044c", callback_data="confirm_save")],
-        [InlineKeyboardButton("\u274c \u041e\u0442\u043c\u0435\u043d\u0438\u0442\u044c", callback_data="main_cancel")],
+        [
+            InlineKeyboardButton(
+                "\ud83d\udd04 \u041f\u0440\u043e\u0434\u043e\u043b\u0436\u0438\u0442\u044c \u0440\u0435\u0434\u0430\u043a\u0442\u0438\u0440\u043e\u0432\u0430\u043d\u0438\u0435",
+                callback_data="continue_editing",
+            )
+        ],
+        [
+            InlineKeyboardButton(
+                "\u2705 \u0421\u043e\u0445\u0440\u0430\u043d\u0438\u0442\u044c \u043a\u0430\u043a \u0435\u0441\u0442\u044c",
+                callback_data="confirm_save",
+            )
+        ],
+        [
+            InlineKeyboardButton(
+                "\u274c \u041e\u0442\u043c\u0435\u043d\u0438\u0442\u044c",
+                callback_data="main_cancel",
+            )
+        ],
     ]
     return InlineKeyboardMarkup(keyboard)
 
@@ -1136,7 +1165,51 @@ async def handle_participant_confirmation(
     update: Update, context: ContextTypes.DEFAULT_TYPE
 ) -> int:
     """Обрабатывает текстовый ввод на этапе подтверждения (только для исправлений)."""
+    user_id = update.effective_user.id
     text = update.message.text.strip()
+
+    logger.debug(
+        "Confirmation handler context for user %s: %s", user_id, context.user_data
+    )
+
+    field_to_edit = context.user_data.get("field_to_edit")
+    clear_job = context.user_data.pop("clear_edit_job", None)
+    if clear_job:
+        clear_job.schedule_removal()
+
+    if field_to_edit:
+        participant_data = context.user_data.get("parsed_participant", {})
+        logger.info(
+            "User %s editing field %s with value: %s", user_id, field_to_edit, text
+        )
+
+        try:
+            updated_data, changes = update_single_field(
+                participant_data, field_to_edit, text
+            )
+        except ValidationError:
+            error_text = MESSAGES["VALIDATION_ERRORS"].get(
+                field_to_edit, f"Недопустимое значение для поля {field_to_edit}"
+            )
+            await update.message.reply_text(f"❌ {error_text}")
+
+            timeout_job = context.job_queue.run_once(
+                clear_field_to_edit, FIELD_EDIT_TIMEOUT, data=user_id
+            )
+            context.user_data["clear_edit_job"] = timeout_job
+            return CONFIRMING_DATA
+
+        context.user_data["parsed_participant"] = updated_data
+        context.user_data.pop("field_to_edit", None)
+
+        logger.info("Changes after edit: %s", "; ".join(changes) or "no changes")
+
+        await show_confirmation(update, context, updated_data)
+        return CONFIRMING_DATA
+
+    logger.warning(
+        "field_to_edit missing in context for user %s during confirmation", user_id
+    )
 
     # Теперь эта функция обрабатывает только исправления, отправляя их в process_participant_confirmation
     # Логика ДА/НЕТ полностью удалена и заменена кнопкой
@@ -1155,7 +1228,19 @@ async def edit_field_callback(
     _add_message_to_cleanup(context, query.message.message_id)
 
     field_to_edit = query.data.split("_")[1]
+    user_id = update.effective_user.id
+    logger.info("User %s selected field %s for editing", user_id, field_to_edit)
+
+    # Save field in context and start timeout job
     context.user_data["field_to_edit"] = field_to_edit
+
+    if job := context.user_data.get("clear_edit_job"):
+        job.schedule_removal()
+
+    timeout_job = context.job_queue.run_once(
+        clear_field_to_edit, FIELD_EDIT_TIMEOUT, data=user_id
+    )
+    context.user_data["clear_edit_job"] = timeout_job
 
     msg = await query.message.reply_text(
         f"Пришлите новое значение для поля **{field_to_edit}**",

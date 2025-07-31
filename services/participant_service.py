@@ -1,4 +1,4 @@
-from typing import Dict, List, Optional, Union
+from typing import Dict, List, Optional, Tuple, Union
 from dataclasses import asdict
 import logging
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
@@ -12,6 +12,7 @@ from utils.exceptions import (
     ParticipantNotFoundError,
     ValidationError,
 )
+from parsers.participant_parser import normalize_field_value
 
 logger = logging.getLogger(__name__)
 
@@ -168,6 +169,30 @@ def detect_changes(old: Dict, new: Dict) -> List[str]:
             changes.append(f"{emoji} **{label}:** {old_value or '—'} → —")
 
     return changes
+
+
+def update_single_field(
+    participant_data: Dict, field_name: str, new_value: str
+) -> Tuple[Dict, List[str]]:
+    """Safely update a single field in participant data.
+
+    Normalizes ``new_value`` according to ``field_name`` and applies the change
+    only to that field. Raises :class:`ValidationError` if normalization fails.
+
+    Returns a tuple of the updated data and a list with human readable changes.
+    """
+
+    original = participant_data.copy()
+    normalized = normalize_field_value(field_name, new_value) if new_value else ""
+
+    if new_value and not normalized:
+        raise ValidationError(f"Invalid value for field {field_name}")
+
+    updated = participant_data.copy()
+    updated[field_name] = normalized
+
+    changes = detect_changes(original, updated)
+    return updated, changes
 
 
 def check_duplicate(full_name_ru: str) -> Optional[Dict]:
