@@ -1,4 +1,5 @@
 from typing import Dict, Optional, List
+from dataclasses import dataclass
 import re
 import logging
 
@@ -18,6 +19,104 @@ from utils.recognizers import (
     recognize_church,
     recognize_city,
 )
+
+
+@dataclass
+class ConflictContext:
+    """Контекст для разрешения конфликтов токенов."""
+
+    token: str
+    token_index: int
+    surrounding_tokens: List[str]
+    already_found_gender: bool
+    already_found_size: bool
+
+
+class TokenConflictResolver:
+    """Разрешает конфликты при парсинге токенов (например, M как пол vs размер)."""
+
+    def __init__(self, field_normalizer):
+        self.field_normalizer = field_normalizer
+
+        # Индикаторы контекста для полей
+        self.gender_context_words = {
+            "ПОЛ",
+            "GENDER",
+            "МУЖСКОЙ",
+            "ЖЕНСКИЙ",
+            "МУЖЧИНА",
+            "ЖЕНЩИНА",
+        }
+
+        self.size_context_words = {
+            "РАЗМЕР",
+            "SIZE",
+            "ОДЕЖДА",
+            "ФУТБОЛКА",
+            "РУБАШКА",
+            "CLOTHING",
+        }
+
+    def resolve_m_conflict(
+        self, context: ConflictContext
+    ) -> tuple[Optional[str], Optional[str]]:
+        """Разрешает конфликт токена 'M' между полом и размером."""
+
+        token_upper = context.token.upper()
+
+        if token_upper != "M":
+            return None, None
+
+        surrounding_upper = [t.upper() for t in context.surrounding_tokens]
+
+        strong_size_indicators = any(
+            word in surrounding_upper for word in self.size_context_words
+        )
+
+        strong_gender_indicators = any(
+            word in surrounding_upper for word in self.gender_context_words
+        )
+
+        other_sizes_nearby = False
+        for token in context.surrounding_tokens:
+            if normalize_size(token) and normalize_size(token) != "M":
+                other_sizes_nearby = True
+                break
+
+        if strong_size_indicators:
+            return None, "M"
+
+        if strong_gender_indicators:
+            return "M", None
+
+        if context.already_found_gender and not context.already_found_size:
+            return None, "M"
+
+        if context.already_found_size and not context.already_found_gender:
+            return "M", None
+
+        if other_sizes_nearby:
+            if context.already_found_size or strong_size_indicators:
+                return None, "M"
+            return "M", None
+
+        return "M", None
+
+    def get_surrounding_context(
+        self, all_words: List[str], target_index: int, window: int = 2
+    ) -> List[str]:
+        """Получает окружающие токены в заданном окне."""
+
+        start = max(0, target_index - window)
+        end = min(len(all_words), target_index + window + 1)
+
+        context = []
+        for i in range(start, end):
+            if i != target_index:
+                context.append(all_words[i])
+
+        return context
+
 
 logger = logging.getLogger(__name__)
 
@@ -520,7 +619,7 @@ class ParticipantParser:
         all_words = text.split()
         self.data = {
             "FullNameRU": "",
-            "Gender": "F",
+            "Gender": "",
             "Size": "",
             "Church": "",
             "Role": "CANDIDATE",
@@ -567,7 +666,8 @@ class ParticipantParser:
         self._extract_names(all_words)
 
     def _postprocess_data(self):
-        pass
+        if not self.data.get("Gender"):
+            self.data["Gender"] = "F"
 
     def _extract_submitted_by(self, text: str):
         """Извлекает информацию о том, кто подал заявку."""
@@ -608,7 +708,9 @@ class ParticipantParser:
                 break
 
     def _extract_gender(self, all_words: list[str]):
-        """Извлекает пол участника."""
+        """Извлекает пол участника с улучшенным разрешением конфликтов."""
+        resolver = TokenConflictResolver(field_normalizer)
+
         gender_explicit = False
         for word in all_words:
             if word in self.processed_words:
@@ -626,21 +728,30 @@ class ParticipantParser:
             wu = word.strip(PUNCTUATION_CHARS).upper()
 
             if wu in field_normalizer.GENDER_MAPPINGS["M"] and not gender_explicit:
-                if wu == "M" and not self.data.get("Size"):
-                    ctx = []
-                    if idx > 0:
-                        ctx.append(all_words[idx - 1].upper())
-                    if idx < len(all_words) - 1:
-                        ctx.append(all_words[idx + 1].upper())
+                if wu == "M":
+                    context = ConflictContext(
+                        token=word,
+                        token_index=idx,
+                        surrounding_tokens=resolver.get_surrounding_context(
+                            all_words, idx
+                        ),
+                        already_found_gender=bool(self.data.get("Gender")),
+                        already_found_size=bool(self.data.get("Size")),
+                    )
 
-                    if any("РАЗМЕР" in c or "SIZE" in c for c in ctx):
-                        self.data["Size"] = "M"
-                    else:
-                        self.data["Gender"] = "M"
+                    gender_value, size_value = resolver.resolve_m_conflict(context)
+
+                    if gender_value:
+                        self.data["Gender"] = gender_value
+                        self.processed_words.add(word)
+                        break
+                    elif size_value:
+                        self.data["Size"] = size_value
+                        self.processed_words.add(word)
                 else:
                     self.data["Gender"] = "M"
-                self.processed_words.add(word)
-                break
+                    self.processed_words.add(word)
+                    break
 
     def _extract_size(self, all_words: list[str]):
         for word in all_words:
