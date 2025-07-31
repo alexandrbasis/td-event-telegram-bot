@@ -78,6 +78,7 @@ def format_participant_block(data: Dict) -> str:
 def get_edit_keyboard(participant_data: Dict) -> InlineKeyboardMarkup:
     """Создает клавиатуру с кнопками для редактирования полей."""
     buttons = [
+        [InlineKeyboardButton("✅ Сохранить", callback_data="confirm_save")],
         [
             InlineKeyboardButton("👤 Имя (рус)", callback_data="edit_FullNameRU"),
             InlineKeyboardButton("🌍 Имя (англ)", callback_data="edit_FullNameEN"),
