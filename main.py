@@ -103,6 +103,30 @@ def cleanup_user_data_safe(context: ContextTypes.DEFAULT_TYPE, user_id: int = No
         logger.debug(f"user_data already empty for user {user_id or 'unknown'}")
 
 
+# --- Вспомогательные функции для очистки ---
+
+def _add_message_to_cleanup(context: ContextTypes.DEFAULT_TYPE, message_id: int):
+    """Добавляет ID сообщения в список для последующей очистки."""
+    if "messages_to_delete" not in context.user_data:
+        context.user_data["messages_to_delete"] = []
+    context.user_data["messages_to_delete"].append(message_id)
+
+
+async def _cleanup_messages(context: ContextTypes.DEFAULT_TYPE, chat_id: int):
+    """Удаляет все сообщения, сохраненные для очистки."""
+    messages_to_delete = context.user_data.get("messages_to_delete", [])
+    for message_id in messages_to_delete:
+        try:
+            await context.bot.delete_message(chat_id=chat_id, message_id=message_id)
+        except Exception as e:
+            logger.warning("Could not delete message %d: %s", message_id, e)
+
+    if "messages_to_delete" in context.user_data:
+        context.user_data["messages_to_delete"].clear()
+
+# --- Конец вспомогательных функций ---
+
+
 # Настройка логирования
 LOG_FORMAT = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 handler = RotatingFileHandler("bot.log", maxBytes=10 * 1024 * 1024, backupCount=5)
@@ -142,22 +166,22 @@ def get_user_role(user_id):
         return "unauthorized"
 
 
-async def show_confirmation(update: Update, participant_data: Dict) -> None:
+async def show_confirmation(update: Update, context: ContextTypes.DEFAULT_TYPE, participant_data: Dict) -> None:
     """Отправляет сообщение с данными участника и клавиатурой для редактирования."""
     confirmation_text = "🔍 Вот что удалось распознать. Всё правильно?\n\n"
     confirmation_text += format_participant_block(participant_data)
     confirmation_text += (
-        "\n\n✅ Отправьте **ДА** для сохранения или **НЕТ** для отмены."
+        "\n\n✅ Нажмите \"Сохранить\", чтобы завершить, или выберите поле для исправления."
     )
-    confirmation_text += "\n\n✏️ **Чтобы исправить поле, нажмите на кнопку ниже.**"
-
     keyboard = get_edit_keyboard(participant_data)
 
-    await update.message.reply_text(
+
+    msg = await update.message.reply_text(
         confirmation_text,
         parse_mode="Markdown",
         reply_markup=keyboard,
     )
+    _add_message_to_cleanup(context, msg.message_id)
 
 
 def get_duplicate_keyboard() -> InlineKeyboardMarkup:
@@ -181,6 +205,12 @@ def get_post_action_keyboard() -> InlineKeyboardMarkup:
         ],
         [InlineKeyboardButton("🏠 Главное меню", callback_data="main_menu")],
     ]
+    return InlineKeyboardMarkup(keyboard)
+
+
+def _get_return_to_menu_keyboard() -> InlineKeyboardMarkup:
+    """Создает клавиатуру с кнопкой возврата в главное меню."""
+    keyboard = [[InlineKeyboardButton("🏠 В главное меню", callback_data="main_menu")]]
     return InlineKeyboardMarkup(keyboard)
 
 
@@ -218,15 +248,23 @@ def format_status_message(participant_data: Dict) -> str:
     return message
 
 
-async def _show_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Display the main menu for the current user."""
+async def _show_main_menu(
+    update: Update, context: ContextTypes.DEFAULT_TYPE, is_return: bool = False
+) -> None:
+    """Display the main menu, editing the existing message when possible."""
     user_id = update.effective_user.id
     role = get_user_role(user_id)
 
-    welcome_text = (
-        "🏕️ **Добро пожаловать в бот Tres Dias Israel!**\n\n"
-        f"👤 Ваша роль: **{role.title()}**"
-    )
+    if is_return:
+        welcome_text = (
+            "✅ **Операция завершена.**\n\n"
+            "Чем еще я могу для вас сделать?"
+        )
+    else:
+        welcome_text = (
+            "🏕️ **Добро пожаловать в бот Tres Dias Israel!**\n\n"
+            f"👤 Ваша роль: **{role.title()}**"
+        )
 
     keyboard: list[list[InlineKeyboardButton]]
     if user_id in COORDINATOR_IDS:
@@ -251,11 +289,26 @@ async def _show_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 
     reply_markup = InlineKeyboardMarkup(keyboard)
 
-    await update.effective_message.reply_text(
-        welcome_text,
-        parse_mode="Markdown",
-        reply_markup=reply_markup,
-    )
+    if update.callback_query:
+        try:
+            await update.callback_query.edit_message_text(
+                text=welcome_text,
+                parse_mode="Markdown",
+                reply_markup=reply_markup,
+            )
+        except Exception:
+            await context.bot.send_message(
+                chat_id=update.effective_chat.id,
+                text=welcome_text,
+                parse_mode="Markdown",
+                reply_markup=reply_markup,
+            )
+    else:
+        await update.effective_message.reply_text(
+            text=welcome_text,
+            parse_mode="Markdown",
+            reply_markup=reply_markup,
+        )
 
 
 
@@ -264,6 +317,7 @@ async def _show_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Entry point that shows the main menu."""
     logger.info("User %s started /start", update.effective_user.id)
+    await _cleanup_messages(context, update.effective_chat.id)
     await _show_main_menu(update, context)
 
 
@@ -293,7 +347,7 @@ async def handle_add_callback(
         [[InlineKeyboardButton("❌ Отмена", callback_data="main_cancel")]]
     )
 
-    await query.message.reply_text(
+    msg1 = await query.message.reply_text(
         "🚀 **Начинаем добавлять нового участника.**\n\n"
         "Отправьте данные любым удобным способом:\n"
         "1️⃣ **Вставьте заполненный шаблон** (пришлю его следующим сообщением).\n"
@@ -304,7 +358,10 @@ async def handle_add_callback(
         parse_mode="Markdown",
         reply_markup=cancel_markup,
     )
-    await query.message.reply_text(MESSAGES["ADD_TEMPLATE"])
+    msg2 = await query.message.reply_text(MESSAGES["ADD_TEMPLATE"])
+    _add_message_to_cleanup(context, msg1.message_id)
+    _add_message_to_cleanup(context, msg2.message_id)
+    _add_message_to_cleanup(context, query.message.message_id)
     return COLLECTING_DATA
 
 
@@ -319,37 +376,7 @@ async def handle_main_menu_callback(update: Update, context: ContextTypes.DEFAUL
 
 
     if data == "main_menu":
-        # Show the main menu again
-        user_id = query.from_user.id
-        role = get_user_role(user_id)
-
-        keyboard: list[list[InlineKeyboardButton]]
-        if user_id in COORDINATOR_IDS:
-            keyboard = [
-                [
-                    InlineKeyboardButton("➕ Добавить", callback_data="main_add"),
-                    InlineKeyboardButton("📋 Список", callback_data="main_list"),
-                ],
-                [
-                    InlineKeyboardButton("📤 Экспорт", callback_data="main_export"),
-                    InlineKeyboardButton("ℹ️ Помощь", callback_data="main_help"),
-                ],
-            ]
-        else:
-            keyboard = [
-                [
-                    InlineKeyboardButton("📋 Список", callback_data="main_list"),
-                    InlineKeyboardButton("📤 Экспорт", callback_data="main_export"),
-                ],
-                [InlineKeyboardButton("ℹ️ Помощь", callback_data="main_help")],
-            ]
-
-        await query.message.reply_text(
-            "🏕️ **Добро пожаловать в бот Tres Dias Israel!**\n\n"
-            f"👤 Ваша роль: **{role.title()}**",
-            parse_mode="Markdown",
-            reply_markup=InlineKeyboardMarkup(keyboard),
-        )
+        await _show_main_menu(update, context, is_return=True)
         return
 
     if data == "main_list":
@@ -439,7 +466,11 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 "Кто живет в комнате 203A?"
     """
 
-    await update.message.reply_text(help_text, parse_mode="Markdown")
+    await update.message.reply_text(
+        help_text,
+        parse_mode="Markdown",
+        reply_markup=_get_return_to_menu_keyboard(),
+    )
 
 
 # Команда /add
@@ -467,7 +498,7 @@ async def add_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
         [[InlineKeyboardButton("❌ Отмена", callback_data="main_cancel")]]
     )
 
-    await update.message.reply_text(
+    msg1 = await update.message.reply_text(
         "🚀 **Начинаем добавлять нового участника.**\n\n"
         "Отправьте данные любым удобным способом:\n"
         "1️⃣ **Вставьте заполненный шаблон** (пришлю его следующим сообщением).\n"
@@ -478,7 +509,10 @@ async def add_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
         parse_mode="Markdown",
         reply_markup=cancel_markup,
     )
-    await update.message.reply_text(MESSAGES["ADD_TEMPLATE"])
+    msg2 = await update.message.reply_text(MESSAGES["ADD_TEMPLATE"])
+    _add_message_to_cleanup(context, msg1.message_id)
+    _add_message_to_cleanup(context, msg2.message_id)
+    _add_message_to_cleanup(context, update.message.message_id)
     return COLLECTING_DATA
 
 
@@ -489,6 +523,7 @@ async def handle_partial_data(
 ) -> int:
     """Collects and processes partial data, supporting multiple formats."""
     text = update.message.text.strip()
+    _add_message_to_cleanup(context, update.message.message_id)
     participant_data = context.user_data.get("add_flow_data", {})
 
     # 1. Check if user pasted a full template (highest priority)
@@ -535,7 +570,7 @@ async def handle_partial_data(
             await update.message.reply_text(
                 f"ℹ️ Участник с именем '{newly_identified_name}' уже существует. Переключаюсь в режим редактирования."
             )
-            await show_confirmation(update, existing_dict)
+            await show_confirmation(update, context, existing_dict)
             return CONFIRMING_DATA
 
     context.user_data["add_flow_data"] = participant_data
@@ -544,16 +579,17 @@ async def handle_partial_data(
 
     if not missing_fields:
         context.user_data["parsed_participant"] = participant_data
-        await show_confirmation(update, participant_data)
+        await show_confirmation(update, context, participant_data)
         return CONFIRMING_DATA
     else:
         status_message = format_status_message(participant_data)
         cancel_markup = InlineKeyboardMarkup(
             [[InlineKeyboardButton("❌ Отмена", callback_data="main_cancel")]]
         )
-        await update.message.reply_text(
+        msg = await update.message.reply_text(
             status_message, parse_mode="Markdown", reply_markup=cancel_markup
         )
+        _add_message_to_cleanup(context, msg.message_id)
         return COLLECTING_DATA
 
 
@@ -666,7 +702,11 @@ async def list_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         message += f"   • Роль: {p.Role}{department}\n"
         message += f"   • ID: {p.id}\n\n"
 
-    await update.message.reply_text(message, parse_mode="Markdown")
+    await update.message.reply_text(
+        message,
+        parse_mode="Markdown",
+        reply_markup=_get_return_to_menu_keyboard(),
+    )
 
 
 # Команда /export
@@ -694,7 +734,8 @@ async def cancel_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     else:
         logger.info("User %s cancelled a non-existent operation.", user_id)
 
-    await _show_main_menu(update, context)
+    await _cleanup_messages(context, update.effective_chat.id)
+    await _show_main_menu(update, context, is_return=True)
     return ConversationHandler.END
 
 
@@ -703,8 +744,9 @@ async def cancel_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     query = update.callback_query
     await query.answer()
 
+    await _cleanup_messages(context, update.effective_chat.id)
     cleanup_user_data_safe(context, update.effective_user.id)
-    await _show_main_menu(update, context)
+    await _show_main_menu(update, context, is_return=True)
     return ConversationHandler.END
 
 
@@ -815,8 +857,62 @@ async def process_participant_confirmation(
     context.user_data["parsed_participant"] = participant_data
     context.user_data["duplicate"] = False
 
-    await show_confirmation(update, participant_data)
+    await show_confirmation(update, context, participant_data)
     return CONFIRMING_DATA
+
+
+@require_role("coordinator")
+@cleanup_on_error
+async def handle_save_confirmation(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Handles the final confirmation via the 'Save' button."""
+    query = update.callback_query
+    await query.answer()
+    await _cleanup_messages(context, update.effective_chat.id)
+
+    participant_data = context.user_data.get("parsed_participant", {})
+    if not participant_data:
+        await query.message.reply_text("❌ Не удалось найти данные для сохранения. Попробуйте снова.")
+        cleanup_user_data_safe(context, update.effective_user.id)
+        return ConversationHandler.END
+
+    is_update = "participant_id" in context.user_data
+
+    # Проверка на дубликат (только при создании нового)
+    if not is_update:
+        existing = participant_service.check_duplicate(participant_data.get("FullNameRU"))
+        if existing:
+            context.user_data["existing_participant_id"] = existing.get("id")
+            message = "⚠️ **Найден дубликат!**\n\n"
+            message += format_participant_block(existing)
+            message += "\n\nЧто делаем?"
+            await query.message.reply_text(
+                message,
+                parse_mode="Markdown",
+                reply_markup=get_duplicate_keyboard(),
+            )
+            return CONFIRMING_DUPLICATE
+
+    # Сохранение или обновление
+    try:
+        if is_update:
+            participant_id = context.user_data["participant_id"]
+            participant_service.update_participant(participant_id, participant_data)
+            success_message = f"✅ **Участник {participant_data['FullNameRU']} (ID: {participant_id}) успешно обновлен!**"
+        else:
+            new_participant = participant_service.add_participant(participant_data)
+            success_message = f"✅ **Участник {new_participant.FullNameRU} (ID: {new_participant.id}) успешно добавлен!**"
+
+        await query.message.reply_text(
+            success_message,
+            parse_mode="Markdown",
+            reply_markup=get_post_action_keyboard(),
+        )
+    except (DatabaseError, BotException, ValidationError) as e:
+        logger.error("Database error during save: %s", e)
+        await query.message.reply_text(f"❌ Произошла ошибка: {e}")
+
+    cleanup_user_data_safe(context, update.effective_user.id)
+    return ConversationHandler.END
 
 
 # Обработка неизвестных команд и текстовых сообщений
@@ -839,141 +935,20 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 # Обработка подтверждения пользователя
+@require_role("coordinator")
 @cleanup_on_error
 async def handle_participant_confirmation(
-    update: Update,
-    context: ContextTypes.DEFAULT_TYPE,
+    update: Update, context: ContextTypes.DEFAULT_TYPE
 ) -> int:
+    """Обрабатывает текстовый ввод на этапе подтверждения (только для исправлений)."""
     text = update.message.text.strip()
-    logger.info("User %s confirmation message: %s", update.effective_user.id, text)
 
-    field_to_edit = context.user_data.get("field_to_edit")
-    if field_to_edit:
-        new_value = text.strip()
-        participant_data = context.user_data.get("parsed_participant", {})
+    # Теперь эта функция обрабатывает только исправления, отправляя их в process_participant_confirmation
+    # Логика ДА/НЕТ полностью удалена и заменена кнопкой
+    await process_participant_confirmation(update, context, text, is_update=True)
+    return CONFIRMING_DATA
 
-        normalized_value = normalize_field_value(field_to_edit, new_value)
 
-        participant_data[field_to_edit] = normalized_value
-
-        context.user_data["parsed_participant"] = participant_data
-        context.user_data.pop("field_to_edit")
-
-        await show_confirmation(update, participant_data)
-        return CONFIRMING_DATA
-    # Если пользователь прислал блок подтверждения целиком
-    if is_template_format(text):
-        parsed = parse_template_format(text)
-        existing = context.user_data.get("parsed_participant", {})
-        participant_data = merge_participant_data(existing, parsed)
-        changes = detect_changes(existing, participant_data)
-        if not changes:
-            await update.message.reply_text(
-                "Изменений не обнаружено. Напишите ДА или НЕТ."
-            )
-            return CONFIRMING_DATA
-        context.user_data["parsed_participant"] = participant_data
-        await show_confirmation(update, participant_data)
-        return CONFIRMING_DATA
-
-    # Нормализуем текст ответа
-    normalized = re.sub(r"[\s\.,!]", "", text.upper())
-
-    if not normalized:
-        await update.message.reply_text(
-            "❓ Ответ не распознан. Напишите ДА или НЕТ или пришлите новые данные."
-        )
-        return CONFIRMING_DATA
-
-    positive = ["ДА", "YES", "Y", "ОК", "OK", "+"]
-    negative = ["НЕТ", "NO", "N", "-", "НИСТ", "НИТ"]
-
-    def is_positive(txt: str) -> bool:
-        return txt in positive or any(txt.startswith(p) for p in positive)
-
-    def is_negative(txt: str) -> bool:
-        return txt in negative or any(txt.startswith(n) for n in negative)
-
-    # Обработка дублей через кнопки
-    if context.user_data.get("duplicate"):
-        await update.message.reply_text(
-            "❓ Пожалуйста, используйте кнопки ниже для выбора действия.",
-            reply_markup=get_duplicate_keyboard(),
-        )
-        return CONFIRMING_DUPLICATE
-
-    # Обычное подтверждение (без дублей)
-    if is_positive(normalized):
-        participant_data = context.user_data.get("parsed_participant", {})
-        participant_id = context.user_data.get("participant_id")
-
-        try:
-            if participant_id:
-                participant_service.update_participant(participant_id, participant_data)
-            else:
-                participant_id = participant_service.add_participant(participant_data)
-        except ValidationError as e:
-            await update.message.reply_text(f"❌ Ошибка валидации: {e}")
-            return ConversationHandler.END
-        except ParticipantNotFoundError as e:
-            await update.message.reply_text(str(e))
-            return ConversationHandler.END
-        except BotException as e:
-            logger.error("Error saving participant: %s", e)
-            await update.message.reply_text(
-                "❌ Ошибка базы данных при сохранении участника."
-            )
-            return ConversationHandler.END
-
-        was_update = bool(context.user_data.get("participant_id"))
-        cleanup_user_data_safe(context, update.effective_user.id)
-
-        success_text = (
-            "✅ **Данные участника успешно обновлены!**"
-            if was_update
-            else "✅ **Участник успешно добавлен!**"
-        )
-        success_text += f"\n\n🆔 **ID:** {participant_id}\n"
-        success_text += f"👤 **Имя:** {participant_data['FullNameRU']}\n"
-        success_text += f"⚥ **Пол:** {participant_data['Gender']}\n"
-        success_text += f"👕 **Размер:** {participant_data['Size']}\n"
-        success_text += f"⛪ **Церковь:** {participant_data['Church']}\n"
-        success_text += f"👥 **Роль:** {participant_data['Role']}\n"
-
-        if participant_data["Role"] == "TEAM":
-            success_text += f"🏢 **Департамент:** {participant_data['Department']}\n"
-
-        if participant_data["SubmittedBy"]:
-            success_text += f"👨‍💼 **Кто подал:** {participant_data['SubmittedBy']}\n"
-
-        if participant_data["ContactInformation"]:
-            success_text += (
-                f"📞 **Контакты:** {participant_data['ContactInformation']}\n"
-            )
-
-        success_text += f"\n📋 Используйте /list для просмотра всех участников"
-
-        await update.message.reply_text(
-            success_text,
-            parse_mode="Markdown",
-            reply_markup=get_post_action_keyboard(),
-        )
-        return ConversationHandler.END
-
-    elif is_negative(normalized):
-        # Отменяем добавление
-        cleanup_user_data_safe(context, update.effective_user.id)
-        await update.message.reply_text(
-            "❌ Добавление участника отменено.\n\n"
-            "Используйте /add для повторной попытки."
-        )
-        return ConversationHandler.END
-
-    else:
-        # Пользователь прислал новые данные для исправления
-        return await process_participant_confirmation(
-            update, context, text, is_update=True
-        )
 
 
 @cleanup_on_error
@@ -984,13 +959,16 @@ async def edit_field_callback(
     query = update.callback_query
     await query.answer()
 
+    _add_message_to_cleanup(context, query.message.message_id)
+
     field_to_edit = query.data.split("_")[1]
     context.user_data["field_to_edit"] = field_to_edit
 
-    await query.edit_message_text(
-        text=f"Пришлите новое значение для поля **{field_to_edit}**",
+    msg = await query.message.reply_text(
+        f"Пришлите новое значение для поля **{field_to_edit}**",
         parse_mode="Markdown",
     )
+    _add_message_to_cleanup(context, msg.message_id)
 
     return CONFIRMING_DATA
 
@@ -1099,6 +1077,7 @@ def main():
                 MessageHandler(filters.TEXT & ~filters.COMMAND, handle_partial_data)
             ],
             CONFIRMING_DATA: [
+                CallbackQueryHandler(handle_save_confirmation, pattern="^confirm_save$"),
                 MessageHandler(
                     filters.TEXT & ~filters.COMMAND, handle_participant_confirmation
                 ),
@@ -1106,9 +1085,6 @@ def main():
             ],
             CONFIRMING_DUPLICATE: [
                 CallbackQueryHandler(handle_duplicate_callback, pattern="^dup_"),
-                MessageHandler(
-                    filters.TEXT & ~filters.COMMAND, handle_participant_confirmation
-                ),
             ],
         },
         fallbacks=[
