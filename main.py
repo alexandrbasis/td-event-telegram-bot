@@ -363,6 +363,16 @@ def get_post_action_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(keyboard)
 
 
+def get_no_changes_keyboard() -> InlineKeyboardMarkup:
+    """Keyboard shown when no changes were detected during editing."""
+    keyboard = [
+        [InlineKeyboardButton("\ud83d\udd04 \u041f\u0440\u043e\u0434\u043e\u043b\u0436\u0438\u0442\u044c \u0440\u0435\u0434\u0430\u043a\u0442\u0438\u0440\u043e\u0432\u0430\u043d\u0438\u0435", callback_data="continue_editing")],
+        [InlineKeyboardButton("\u2705 \u0421\u043e\u0445\u0440\u0430\u043d\u0438\u0442\u044c \u043a\u0430\u043a \u0435\u0441\u0442\u044c", callback_data="confirm_save")],
+        [InlineKeyboardButton("\u274c \u041e\u0442\u043c\u0435\u043d\u0438\u0442\u044c", callback_data="main_cancel")],
+    ]
+    return InlineKeyboardMarkup(keyboard)
+
+
 def _get_return_to_menu_keyboard() -> InlineKeyboardMarkup:
     """Создает клавиатуру с кнопкой возврата в главное меню."""
     keyboard = [[InlineKeyboardButton("🏠 В главное меню", callback_data="main_menu")]]
@@ -992,7 +1002,8 @@ async def process_participant_confirmation(
         changes = detect_changes(existing, participant_data)
         if not changes:
             await update.message.reply_text(
-                "Изменений не обнаружено. Напишите ДА или НЕТ."
+                "Изменений не обнаружено. Выберите действие:",
+                reply_markup=get_no_changes_keyboard(),
             )
             return CONFIRMING_DATA
 
@@ -1156,6 +1167,27 @@ async def edit_field_callback(
 
 
 @smart_cleanup_on_error
+async def handle_continue_editing_callback(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> int:
+    """Shows the edit keyboard again when user chooses to continue editing."""
+    query = update.callback_query
+    await query.answer()
+
+    participant_data = context.user_data.get("parsed_participant", {})
+    keyboard = get_edit_keyboard(participant_data)
+
+    msg = await query.message.reply_text(
+        "\u270f\ufe0f Выберите поле для редактирования или сохраните без изменений.",
+        parse_mode="Markdown",
+        reply_markup=keyboard,
+    )
+    _add_message_to_cleanup(context, msg.message_id)
+
+    return CONFIRMING_DATA
+
+
+@smart_cleanup_on_error
 async def handle_duplicate_callback(
     update: Update, context: ContextTypes.DEFAULT_TYPE
 ) -> int:
@@ -1266,6 +1298,9 @@ def main():
                     filters.TEXT & ~filters.COMMAND, handle_participant_confirmation
                 ),
                 CallbackQueryHandler(edit_field_callback, pattern="^edit_"),
+                CallbackQueryHandler(
+                    handle_continue_editing_callback, pattern="^continue_editing$"
+                ),
             ],
             CONFIRMING_DUPLICATE: [
                 CallbackQueryHandler(handle_duplicate_callback, pattern="^dup_"),

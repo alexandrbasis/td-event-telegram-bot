@@ -106,17 +106,26 @@ def get_edit_keyboard(participant_data: Dict) -> InlineKeyboardMarkup:
             InlineKeyboardButton("⛪ Церковь", callback_data="edit_Church"),
             InlineKeyboardButton("🏙️ Город", callback_data="edit_CountryAndCity"),
         ],
-        [
-            InlineKeyboardButton("👥 Роль", callback_data="edit_Role"),
-            InlineKeyboardButton("🏢 Департамент", callback_data="edit_Department"),
-        ],
+    ]
+
+    role = participant_data.get("Role")
+    if role == "CANDIDATE":
+        buttons.append([InlineKeyboardButton("👥 Роль", callback_data="edit_Role")])
+    else:
+        buttons.append(
+            [
+                InlineKeyboardButton("👥 Роль", callback_data="edit_Role"),
+                InlineKeyboardButton("🏢 Департамент", callback_data="edit_Department"),
+            ]
+        )
+
+    buttons.append(
         [
             InlineKeyboardButton("👨‍💼 Кто подал", callback_data="edit_SubmittedBy"),
-            InlineKeyboardButton(
-                "📞 Контакты", callback_data="edit_ContactInformation"
-            ),
-        ],
-    ]
+            InlineKeyboardButton("📞 Контакты", callback_data="edit_ContactInformation"),
+        ]
+    )
+
     buttons.append([InlineKeyboardButton("❌ Отмена", callback_data="main_cancel")])
     return InlineKeyboardMarkup(buttons)
 
