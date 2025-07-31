@@ -548,6 +548,19 @@ def parse_unstructured_text(text: str) -> Dict[str, str]:
                 consumed[i] = True
                 break
 
+    # --- Pass 3.5: Extract Contact Information ---
+    for i, token in enumerate(tokens):
+        if consumed[i]:
+            continue
+
+        if "ContactInformation" in participant_data:
+            break
+
+        contact = extract_contact_info(token)
+        if contact:
+            participant_data["ContactInformation"] = contact
+            consumed[i] = True
+
     # --- Pass 4: Everything that is left is the name ---
     name_parts = [tokens[i] for i in range(len(tokens)) if not consumed[i]]
     if name_parts:
