@@ -1,26 +1,11 @@
 from typing import Optional
 from utils.cache import cache
-
-ROLE_MAP = {
-    'тим': 'TEAM', 'команда': 'TEAM', 'team': 'TEAM',
-    'участник': 'Participant', 'кандидат': 'Participant', 'participant': 'Participant'
-}
-
-GENDER_MAP = {
-    'м': 'M', 'm': 'M', 'муж': 'M', 'мужской': 'M',
-    'ж': 'F', 'f': 'F', 'жен': 'F', 'женский': 'F'
-}
-
-SIZE_MAP = {
-    'xs': 'XS', 's': 'S', 'm': 'M', 'l': 'L', 'xl': 'XL', 'xxl': 'XXL',
-    'хс': 'XS', 'с': 'S', 'м': 'M', 'л': 'L', 'хл': 'XL', 'ххл': 'XXL'
-}
-
-DEPARTMENT_MAP = {
-    'админ': 'Administration', 'администрация': 'Administration',
-    'кухня': 'Kitchen',
-    'прославление': 'Worship', 'воршип': 'Worship',
-}
+from utils.field_normalizer import (
+    normalize_gender,
+    normalize_role,
+    normalize_size,
+    normalize_department,
+)
 
 
 def get_reference_data(key: str):
@@ -28,28 +13,30 @@ def get_reference_data(key: str):
 
 
 def recognize_role(token: str) -> Optional[str]:
-    return ROLE_MAP.get(token.lower())
+    """Распознает роль из токена"""
+    return normalize_role(token)
 
 
 def recognize_gender(token: str) -> Optional[str]:
-    return GENDER_MAP.get(token.lower())
+    """Распознает пол из токена"""
+    return normalize_gender(token)
 
 
 def recognize_size(token: str) -> Optional[str]:
-    return SIZE_MAP.get(token.lower())
+    """Распознает размер из токена"""
+    return normalize_size(token)
 
 
 def recognize_department(token: str) -> Optional[str]:
-    for alias, standard in DEPARTMENT_MAP.items():
-        if alias in token.lower():
-            return standard
-    return None
+    """Распознает департамент из токена"""
+    return normalize_department(token)
 
 
 def recognize_church(token: str) -> Optional[str]:
+    """Распознает церковь из токена"""
     if len(token) < 3:
         return None
-    churches = get_reference_data('churches')
+    churches = get_reference_data("churches")
     for church_name in churches:
         if token.lower() in church_name.lower():
             return church_name
@@ -57,10 +44,12 @@ def recognize_church(token: str) -> Optional[str]:
 
 
 def recognize_city(token: str) -> Optional[str]:
+    """Распознает город из токена"""
     if len(token) < 3:
         return None
-    cities = get_reference_data('cities')
+    cities = get_reference_data("cities")
+    token_upper = token.upper()
     for city_name in cities:
-        if token.lower() in city_name.lower():
+        if token_upper in city_name or city_name in token_upper:
             return city_name
     return None
