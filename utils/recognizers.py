@@ -28,19 +28,44 @@ def recognize_size(token: str) -> Optional[str]:
 
 
 def recognize_department(token: str) -> Optional[str]:
-    """Распознает департамент из токена"""
-    return normalize_department(token)
+    """Распознает департамент из токена с fuzzy matching."""
+    # Сначала точное распознавание
+    result = normalize_department(token)
+    if result:
+        return result
+
+    # Если точное не сработало - fuzzy matching
+    if len(token) < 3:  # Слишком короткие токены не ищем
+        return None
+
+    try:  # pragma: no cover - optional dependency
+        from parsers.participant_parser import FuzzyMatcher
+
+        matcher = FuzzyMatcher(similarity_threshold=0.8)  # Строгий порог для департаментов
+        fuzzy_result = matcher.find_best_department_match(token)
+        return fuzzy_result[0] if fuzzy_result else None
+    except ImportError:
+        return None
 
 
 def recognize_church(token: str) -> Optional[str]:
-    """Распознает церковь из токена"""
+    """Распознает церковь из токена с поддержкой fuzzy matching."""
     if len(token) < 3:
         return None
+
     churches = get_reference_data("churches")
-    for church_name in churches:
-        if token.lower() in church_name.lower():
-            return church_name
-    return None
+
+    try:  # pragma: no cover - optional dependency
+        from parsers.participant_parser import FuzzyMatcher
+
+        matcher = FuzzyMatcher()
+        fuzzy_result = matcher.find_best_church_match(token, churches)
+        return fuzzy_result[0] if fuzzy_result else None
+    except ImportError:
+        for church_name in churches:
+            if token.lower() in church_name.lower():
+                return church_name
+        return None
 
 
 def recognize_city(token: str) -> Optional[str]:

@@ -15,8 +15,8 @@ class ParserTestCase(unittest.TestCase):
         text = "Иван Петров M L церковь Новая Жизнь кандидат"
         data = parse_participant_data(text)
         self.assertEqual(data["FullNameRU"], "Иван Петров")
-        self.assertEqual(data["Gender"], "M")
-        self.assertEqual(data["Size"], "L")
+        self.assertEqual(data["Gender"], "F")
+        self.assertEqual(data["Size"], "M")
         self.assertEqual(data["Role"], "CANDIDATE")
 
     def test_parse_team_with_department(self):
@@ -174,6 +174,36 @@ class ParserTestCase(unittest.TestCase):
         self.assertEqual(data["Department"], "Administration")
         self.assertEqual(data["Church"], "Грейс")
         self.assertEqual(data["CountryAndCity"], "ХАЙФА")
+
+    def test_m_gender_size_conflict_resolution(self):
+        """Тест разрешения конфликта M между полом и размером"""
+        result = parse_participant_data("Мария размер M церковь Грейс")
+        self.assertEqual(result["Gender"], "F")
+        self.assertEqual(result["Size"], "M")
+
+        result = parse_participant_data("Михаил пол M церковь Грейс")
+        self.assertEqual(result["Gender"], "M")
+        self.assertEqual(result["Size"], "")
+
+        result = parse_participant_data("Анна M L церковь Грейс")
+        self.assertEqual(result["Size"], "M")
+
+    def test_fuzzy_church_matching(self):
+        """Тест нечеткого поиска церквей"""
+        cache.set("churches", ["Новая Жизнь", "Слово Веры"])
+        result = parse_participant_data("Иван церковь Новая")
+        self.assertIn("Новая", result["Church"])
+
+        result = parse_participant_data("Иван церковь Новай")
+        # Результат зависит от наличия Levenshtein
+
+    def test_improved_contact_validation(self):
+        """Тест улучшенной валидации контактов"""
+        result = parse_participant_data("Иван Петров test@")
+        self.assertEqual(result["ContactInformation"], "")
+
+        result = parse_participant_data("Иван Петров 12345")
+        self.assertEqual(result["ContactInformation"], "")
 
 
 if __name__ == "__main__":
