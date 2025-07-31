@@ -16,3 +16,8 @@ class DuplicateParticipantError(BotException):
 class ValidationError(BotException):
     """Raised when validation of data fails"""
     pass
+
+
+class DatabaseError(BotException):
+    """Related to database errors."""
+    pass

@@ -39,6 +39,7 @@ from utils.exceptions import (
     BotException,
     ParticipantNotFoundError,
     ValidationError,
+    DatabaseError,
 )
 from messages import MESSAGES
 from states import CONFIRMING_DATA, CONFIRMING_DUPLICATE, COLLECTING_DATA
@@ -105,6 +106,7 @@ def cleanup_user_data_safe(context: ContextTypes.DEFAULT_TYPE, user_id: int = No
 
 # --- Вспомогательные функции для очистки ---
 
+
 def _add_message_to_cleanup(context: ContextTypes.DEFAULT_TYPE, message_id: int):
     """Добавляет ID сообщения в список для последующей очистки."""
     if "messages_to_delete" not in context.user_data:
@@ -123,6 +125,7 @@ async def _cleanup_messages(context: ContextTypes.DEFAULT_TYPE, chat_id: int):
 
     if "messages_to_delete" in context.user_data:
         context.user_data["messages_to_delete"].clear()
+
 
 # --- Конец вспомогательных функций ---
 
@@ -166,15 +169,14 @@ def get_user_role(user_id):
         return "unauthorized"
 
 
-async def show_confirmation(update: Update, context: ContextTypes.DEFAULT_TYPE, participant_data: Dict) -> None:
+async def show_confirmation(
+    update: Update, context: ContextTypes.DEFAULT_TYPE, participant_data: Dict
+) -> None:
     """Отправляет сообщение с данными участника и клавиатурой для редактирования."""
     confirmation_text = "🔍 Вот что удалось распознать. Всё правильно?\n\n"
     confirmation_text += format_participant_block(participant_data)
-    confirmation_text += (
-        "\n\n✅ Нажмите \"Сохранить\", чтобы завершить, или выберите поле для исправления."
-    )
+    confirmation_text += '\n\n✅ Нажмите "Сохранить", чтобы завершить, или выберите поле для исправления.'
     keyboard = get_edit_keyboard(participant_data)
-
 
     msg = await update.message.reply_text(
         confirmation_text,
@@ -257,8 +259,7 @@ async def _show_main_menu(
 
     if is_return:
         welcome_text = (
-            "✅ **Операция завершена.**\n\n"
-            "Чем еще я могу для вас сделать?"
+            "✅ **Операция завершена.**\n\n" "Чем еще я могу для вас сделать?"
         )
     else:
         welcome_text = (
@@ -309,7 +310,6 @@ async def _show_main_menu(
             parse_mode="Markdown",
             reply_markup=reply_markup,
         )
-
 
 
 # Команда /start
@@ -373,7 +373,6 @@ async def handle_main_menu_callback(update: Update, context: ContextTypes.DEFAUL
     data = query.data
 
     await query.edit_message_reply_markup(reply_markup=None)
-
 
     if data == "main_menu":
         await _show_main_menu(update, context, is_return=True)
@@ -863,7 +862,9 @@ async def process_participant_confirmation(
 
 @require_role("coordinator")
 @cleanup_on_error
-async def handle_save_confirmation(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+async def handle_save_confirmation(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> int:
     """Handles the final confirmation via the 'Save' button."""
     query = update.callback_query
     await query.answer()
@@ -871,7 +872,9 @@ async def handle_save_confirmation(update: Update, context: ContextTypes.DEFAULT
 
     participant_data = context.user_data.get("parsed_participant", {})
     if not participant_data:
-        await query.message.reply_text("❌ Не удалось найти данные для сохранения. Попробуйте снова.")
+        await query.message.reply_text(
+            "❌ Не удалось найти данные для сохранения. Попробуйте снова."
+        )
         cleanup_user_data_safe(context, update.effective_user.id)
         return ConversationHandler.END
 
@@ -879,7 +882,9 @@ async def handle_save_confirmation(update: Update, context: ContextTypes.DEFAULT
 
     # Проверка на дубликат (только при создании нового)
     if not is_update:
-        existing = participant_service.check_duplicate(participant_data.get("FullNameRU"))
+        existing = participant_service.check_duplicate(
+            participant_data.get("FullNameRU")
+        )
         if existing:
             context.user_data["existing_participant_id"] = existing.get("id")
             message = "⚠️ **Найден дубликат!**\n\n"
@@ -908,7 +913,7 @@ async def handle_save_confirmation(update: Update, context: ContextTypes.DEFAULT
             reply_markup=get_post_action_keyboard(),
         )
     except (DatabaseError, BotException, ValidationError) as e:
-        logger.error("Database error during save: %s", e)
+        logger.error("Error during save confirmation: %s", e)
         await query.message.reply_text(f"❌ Произошла ошибка: {e}")
 
     cleanup_user_data_safe(context, update.effective_user.id)
@@ -949,8 +954,6 @@ async def handle_participant_confirmation(
     return CONFIRMING_DATA
 
 
-
-
 @cleanup_on_error
 async def edit_field_callback(
     update: Update, context: ContextTypes.DEFAULT_TYPE
@@ -986,14 +989,14 @@ async def handle_duplicate_callback(
 
     if action == "dup_add_new":
         try:
-            participant_id = participant_service.add_participant(participant_data)
+            new_participant = participant_service.add_participant(participant_data)
         except ValidationError as e:
             await query.message.reply_text(f"❌ Ошибка валидации: {e}")
             return ConversationHandler.END
         except ParticipantNotFoundError as e:  # unlikely here
             await query.message.reply_text(str(e))
             return ConversationHandler.END
-        except BotException as e:
+        except (DatabaseError, BotException) as e:
             logger.error("Error adding participant: %s", e)
             await query.message.reply_text(
                 "❌ Ошибка базы данных при добавлении участника."
@@ -1003,25 +1006,27 @@ async def handle_duplicate_callback(
 
         await query.message.reply_text(
             f"✅ **Участник добавлен как новый (возможен дубль)**\n\n"
-            f"🆔 ID: {participant_id}\n"
+            f"🆔 ID: {new_participant.id}\n"
             f"👤 Имя: {participant_data['FullNameRU']}\n\n"
             f"⚠️ Обратите внимание на возможное дублирование!",
             parse_mode="Markdown",
-            reply_markup=get_post_action_keyboard()
+            reply_markup=get_post_action_keyboard(),
         )
 
     elif action == "dup_replace":
         existing = participant_service.check_duplicate(participant_data["FullNameRU"])
         if existing:
             try:
-                updated = participant_service.update_participant(existing.id, participant_data)
+                updated = participant_service.update_participant(
+                    existing.id, participant_data
+                )
             except ValidationError as e:
                 await query.message.reply_text(f"❌ Ошибка валидации: {e}")
                 return ConversationHandler.END
             except ParticipantNotFoundError as e:
                 await query.message.reply_text(str(e))
                 return ConversationHandler.END
-            except BotException as e:
+            except (DatabaseError, BotException) as e:
                 logger.error("Error updating participant: %s", e)
                 await query.message.reply_text(
                     "❌ Ошибка базы данных при обновлении участника."
@@ -1037,7 +1042,7 @@ async def handle_duplicate_callback(
                     f"👥 Роль: {participant_data['Role']}\n\n"
                     f"📋 Данные заменены новыми значениями",
                     parse_mode="Markdown",
-                    reply_markup=get_post_action_keyboard()
+                    reply_markup=get_post_action_keyboard(),
                 )
             else:
                 await query.message.reply_text("❌ Ошибка обновления участника.")
@@ -1070,14 +1075,16 @@ def main():
     add_conv = ConversationHandler(
         entry_points=[
             CommandHandler("add", add_command),
-            CallbackQueryHandler(handle_add_callback, pattern="^main_add$")
+            CallbackQueryHandler(handle_add_callback, pattern="^main_add$"),
         ],
         states={
             COLLECTING_DATA: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, handle_partial_data)
             ],
             CONFIRMING_DATA: [
-                CallbackQueryHandler(handle_save_confirmation, pattern="^confirm_save$"),
+                CallbackQueryHandler(
+                    handle_save_confirmation, pattern="^confirm_save$"
+                ),
                 MessageHandler(
                     filters.TEXT & ~filters.COMMAND, handle_participant_confirmation
                 ),
@@ -1089,13 +1096,15 @@ def main():
         },
         fallbacks=[
             CommandHandler("cancel", cancel_command),
-            CallbackQueryHandler(cancel_callback, pattern="^main_cancel$")
+            CallbackQueryHandler(cancel_callback, pattern="^main_cancel$"),
         ],
     )
 
     application.add_handler(add_conv)
     application.add_handler(
-        CallbackQueryHandler(handle_main_menu_callback, pattern="^main_(list|export|help|menu)$")
+        CallbackQueryHandler(
+            handle_main_menu_callback, pattern="^main_(list|export|help|menu)$"
+        )
     )
     application.add_handler(CommandHandler("edit", edit_command))
     application.add_handler(CommandHandler("edit_field", edit_field_command))

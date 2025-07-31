@@ -146,9 +146,15 @@ from database import (
     find_participant_by_name,
     get_all_participants,
     update_participant,
-    delete_participant
+    delete_participant,
 )
-from utils.exceptions import ParticipantNotFoundError, ValidationError, BotException
+from utils.exceptions import (
+    ParticipantNotFoundError,
+    ValidationError,
+    BotException,
+    DatabaseError,
+)
+import sqlite3
 
 logger = logging.getLogger(__name__)
 
@@ -160,12 +166,17 @@ class SqliteParticipantRepository(AbstractParticipantRepository):
         logger.info(f"Adding participant to SQLite: {participant.FullNameRU}")
         participant_data = asdict(participant)
         participant_data.pop('id', None)  # Убираем ID перед добавлением
-        return add_participant(participant_data)
+        try:
+            return add_participant(participant_data)
+        except sqlite3.Error as e:
+            raise DatabaseError(f"SQLite error on add: {e}") from e
 
     def get_by_id(self, participant_id: int) -> Optional[Participant]:
         logger.info(f"Getting participant by ID from SQLite: {participant_id}")
-
-        participant_dict = get_participant_by_id(participant_id)
+        try:
+            participant_dict = get_participant_by_id(participant_id)
+        except sqlite3.Error as e:
+            raise DatabaseError(f"SQLite error on get_by_id: {e}") from e
 
         if participant_dict is None:
             logger.debug(f"Participant {participant_id} not found in database")
@@ -177,7 +188,10 @@ class SqliteParticipantRepository(AbstractParticipantRepository):
 
     def get_by_name(self, full_name_ru: str) -> Optional[Participant]:
         logger.info(f"Getting participant by name from SQLite: {full_name_ru}")
-        participant_dict = find_participant_by_name(full_name_ru)
+        try:
+            participant_dict = find_participant_by_name(full_name_ru)
+        except sqlite3.Error as e:
+            raise DatabaseError(f"SQLite error on get_by_name: {e}") from e
         if participant_dict:
             valid_fields = {k: v for k, v in participant_dict.items() if k in Participant.__annotations__}
             return Participant(**valid_fields)
@@ -185,7 +199,10 @@ class SqliteParticipantRepository(AbstractParticipantRepository):
 
     def get_all(self) -> List[Participant]:
         logger.info("Getting all participants from SQLite")
-        participants_list_of_dicts = get_all_participants()
+        try:
+            participants_list_of_dicts = get_all_participants()
+        except sqlite3.Error as e:
+            raise DatabaseError(f"SQLite error on get_all: {e}") from e
         return [
             Participant(**{k: v for k, v in p.items() if k in Participant.__annotations__})
             for p in participants_list_of_dicts
@@ -204,7 +221,10 @@ class SqliteParticipantRepository(AbstractParticipantRepository):
         participant_data = asdict(participant)
         participant_data.pop('id', None)  # Убираем ID из данных
 
-        return update_participant(participant.id, participant_data)
+        try:
+            return update_participant(participant.id, participant_data)
+        except sqlite3.Error as e:
+            raise DatabaseError(f"SQLite error on update: {e}") from e
 
     def update_fields(self, participant_id: int, **fields) -> bool:
         """
@@ -232,14 +252,20 @@ class SqliteParticipantRepository(AbstractParticipantRepository):
 
         # Создаем новый объект и обновляем
         updated_participant = Participant(**current_dict)
-        return self.update(updated_participant)
+        try:
+            return self.update(updated_participant)
+        except sqlite3.Error as e:
+            raise DatabaseError(f"SQLite error on update_fields: {e}") from e
 
     def delete(self, participant_id: int) -> bool:
         """
         ✅ ОБНОВЛЕНО: теперь использует реальное удаление из БД.
         """
         logger.info(f"Deleting participant from SQLite: {participant_id}")
-        return delete_participant(participant_id)
+        try:
+            return delete_participant(participant_id)
+        except sqlite3.Error as e:
+            raise DatabaseError(f"SQLite error on delete: {e}") from e
 
     def exists(self, participant_id: int) -> bool:
         """

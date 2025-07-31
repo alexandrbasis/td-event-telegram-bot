@@ -145,7 +145,7 @@ class ParticipantService:
         """Return participant if exists, otherwise None."""
         return self.repository.get_by_name(full_name_ru)
 
-    def add_participant(self, data: Dict) -> int:
+    def add_participant(self, data: Dict) -> Participant:
         """
         ✅ ОБНОВЛЕНО: создает объект Participant и передает в repository.
 
@@ -163,7 +163,9 @@ class ParticipantService:
 
         # ✅ ИСПРАВЛЕНИЕ: создаем объект Participant и передаем в repository
         new_participant = Participant(**data)
-        return self.repository.add(new_participant)
+        new_id = self.repository.add(new_participant)
+        new_participant.id = new_id
+        return new_participant
 
     def update_participant(self, participant_id: int, data: Dict) -> bool:
         """
