@@ -96,9 +96,7 @@ class TokenConflictResolver:
             return "M", None
 
         if other_sizes_nearby:
-            if context.already_found_size or strong_size_indicators:
-                return None, "M"
-            return "M", None
+            return None, "M"
 
         return "M", None
 
@@ -119,6 +117,115 @@ class TokenConflictResolver:
 
 
 logger = logging.getLogger(__name__)
+
+try:
+    import Levenshtein
+
+    FUZZY_MATCHING_AVAILABLE = True
+except ImportError:  # pragma: no cover - optional dependency
+    FUZZY_MATCHING_AVAILABLE = False
+    logger.warning("Levenshtein not available, fuzzy matching disabled")
+
+
+class FuzzyMatcher:
+    """Нечеткий поиск для церквей и департаментов."""
+
+    def __init__(self, similarity_threshold: float = 0.75):
+        self.similarity_threshold = similarity_threshold
+
+    def calculate_similarity(self, str1: str, str2: str) -> float:
+        """Вычисляет схожесть между двумя строками (0.0 - 1.0)."""
+        if not FUZZY_MATCHING_AVAILABLE:
+            str1_lower = str1.lower()
+            str2_lower = str2.lower()
+
+            if str1_lower == str2_lower:
+                return 1.0
+            elif str1_lower in str2_lower or str2_lower in str1_lower:
+                return 0.8
+            else:
+                return 0.0
+
+        max_len = max(len(str1), len(str2))
+        if max_len == 0:
+            return 1.0
+
+        distance = Levenshtein.distance(str1.lower(), str2.lower())
+        similarity = 1.0 - (distance / max_len)
+        return similarity
+
+    def find_best_church_match(
+        self, token: str, churches: List[str]
+    ) -> Optional[tuple[str, float]]:
+        """Находит наиболее похожую церковь."""
+        if not churches:
+            return None
+
+        best_match = None
+        best_score = 0.0
+
+        token_clean = token.strip().lower()
+
+        for church in churches:
+            church_clean = church.strip().lower()
+
+            if token_clean == church_clean:
+                return church, 1.0
+
+            church_words = church_clean.split()
+            for church_word in church_words:
+                similarity = self.calculate_similarity(
+                    token_clean, church_word
+                )
+                if (
+                    similarity > best_score
+                    and similarity >= self.similarity_threshold
+                ):
+                    best_match = church
+                    best_score = similarity
+
+            full_similarity = self.calculate_similarity(
+                token_clean, church_clean
+            )
+            if (
+                full_similarity > best_score
+                and full_similarity >= self.similarity_threshold
+            ):
+                best_match = church
+                best_score = full_similarity
+
+        return (best_match, best_score) if best_match else None
+
+    def find_best_department_match(
+        self, token: str
+    ) -> Optional[tuple[str, float]]:
+        """Находит наиболее похожий департамент."""
+        best_match = None
+        best_score = 0.0
+
+        token_clean = token.strip().lower()
+
+        for (
+            dept_name,
+            synonyms,
+        ) in field_normalizer.DEPARTMENT_MAPPINGS.items():
+            for synonym in synonyms:
+                synonym_clean = synonym.lower()
+
+                if token_clean == synonym_clean:
+                    return dept_name, 1.0
+
+                similarity = self.calculate_similarity(
+                    token_clean, synonym_clean
+                )
+                if (
+                    similarity > best_score
+                    and similarity >= self.similarity_threshold
+                ):
+                    best_match = dept_name
+                    best_score = similarity
+
+        return (best_match, best_score) if best_match else None
 
 
 def is_valid_email(email: str) -> bool:
@@ -208,7 +315,9 @@ def is_valid_phone(phone: str) -> bool:
         return True
 
     # 5. Номера с форматированием
-    if len(digits) >= 7 and any(char in phone for char in ["-", "(", ")", " ", "."]):
+    if len(digits) >= 7 and any(
+        char in phone for char in ["-", "(", ")", " ", "."]
+    ):
         formatting_chars = sum(1 for c in phone if c in "-()., ")
         if formatting_chars <= len(digits):
             return True
@@ -390,7 +499,9 @@ def parse_unstructured_text(text: str) -> Dict[str, str]:
             if any(consumed[i : i + len(name_tokens)]):
                 continue
             # Compare lowercased tokens
-            if [t.lower() for t in chunk] == [nt.lower() for nt in name_tokens]:
+            if [t.lower() for t in chunk] == [
+                nt.lower() for nt in name_tokens
+            ]:
                 participant_data["Church"] = church_name_str.capitalize()
                 for j in range(i, i + len(name_tokens)):
                     consumed[j] = True
@@ -400,7 +511,8 @@ def parse_unstructured_text(text: str) -> Dict[str, str]:
                     consumed[i - 1] = True
                 elif (
                     i + len(name_tokens) < len(tokens)
-                    and tokens[i + len(name_tokens)].lower() in church_identifiers
+                    and tokens[i + len(name_tokens)].lower()
+                    in church_identifiers
                 ):
                     consumed[i + len(name_tokens)] = True
                 break
@@ -671,7 +783,9 @@ class ParticipantParser:
 
     def _extract_submitted_by(self, text: str):
         """Извлекает информацию о том, кто подал заявку."""
-        match = re.search(r"от\s+([А-ЯЁA-Z][А-Яа-яёA-Za-z\s]+)", text, re.IGNORECASE)
+        match = re.search(
+            r"от\s+([А-ЯЁA-Z][А-Яа-яёA-Za-z\s]+)", text, re.IGNORECASE
+        )
         if match:
             full_match = match.group(1).strip()
             words = full_match.split()
@@ -727,7 +841,10 @@ class ParticipantParser:
                 continue
             wu = word.strip(PUNCTUATION_CHARS).upper()
 
-            if wu in field_normalizer.GENDER_MAPPINGS["M"] and not gender_explicit:
+            if (
+                wu in field_normalizer.GENDER_MAPPINGS["M"]
+                and not gender_explicit
+            ):
                 if wu == "M":
                     context = ConflictContext(
                         token=word,
@@ -739,7 +856,9 @@ class ParticipantParser:
                         already_found_size=bool(self.data.get("Size")),
                     )
 
-                    gender_value, size_value = resolver.resolve_m_conflict(context)
+                    gender_value, size_value = resolver.resolve_m_conflict(
+                        context
+                    )
 
                     if gender_value:
                         self.data["Gender"] = gender_value
@@ -759,7 +878,8 @@ class ParticipantParser:
                 continue
             size_val = normalize_size(word)
             if size_val:
-                self.data["Size"] = size_val
+                if not self.data.get("Size"):
+                    self.data["Size"] = size_val
                 self.processed_words.add(word)
 
     def _extract_role_and_department(self, all_words: list[str]):
@@ -786,6 +906,9 @@ class ParticipantParser:
                 self.processed_words.add(word)
 
     def _extract_church(self, all_words: list[str]):
+        """Извлекает название церкви с поддержкой fuzzy matching."""
+
+        # Сначала пытаемся найти по ключевым словам (как раньше)
         for i, word in enumerate(all_words):
             if word in self.processed_words:
                 continue
@@ -809,7 +932,27 @@ class ParticipantParser:
                     church_words.append(all_words[i + 1])
                     self.processed_words.add(all_words[i + 1])
                 self.data["Church"] = " ".join(church_words)
-                break
+                return  # Нашли через ключевые слова - выходим
+
+        # Если не нашли через ключевые слова - пробуем fuzzy matching
+        if not self.data.get("Church"):
+            churches = cache.get("churches") or []
+            if churches:
+                matcher = FuzzyMatcher(similarity_threshold=0.7)
+
+                for i, word in enumerate(all_words):
+                    if word in self.processed_words or contains_hebrew(word):
+                        continue
+
+                    result = matcher.find_best_church_match(word, churches)
+                    if result:
+                        church_name, confidence = result
+                        self.data["Church"] = church_name
+                        self.processed_words.add(word)
+                        logger.debug(
+                            f"Fuzzy matched church: {word} -> {church_name} (confidence: {confidence:.2f})"
+                        )
+                        break
 
     def _extract_names(self, all_words: list[str]):
         unprocessed = [w for w in all_words if w not in self.processed_words]

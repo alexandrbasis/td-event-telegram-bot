@@ -1,7 +1,11 @@
 import unittest
 
-from parsers.participant_parser import is_valid_phone
-from parsers.participant_parser import parse_participant_data
+from parsers.participant_parser import (
+    is_valid_email,
+    is_valid_phone,
+    extract_contact_info,
+    parse_participant_data,
+)
 
 
 class IsraeliPhoneValidationTestCase(unittest.TestCase):
@@ -80,6 +84,86 @@ class IsraeliPhoneValidationTestCase(unittest.TestCase):
         self.assertEqual(result["ContactInformation"], "02-123-4567")
 
         result = parse_participant_data("Ицхак Петров муж L церковь Грейс 051-123-4567")
+        self.assertEqual(result["ContactInformation"], "")
+
+
+class ContactValidationTestCase(unittest.TestCase):
+    def test_valid_emails(self):
+        """Тест корректных email адресов"""
+        valid_emails = [
+            "test@example.com",
+            "user.name@domain.org",
+            "firstname+lastname@company.co.uk",
+            "simple@mail.ru",
+        ]
+
+        for email in valid_emails:
+            with self.subTest(email=email):
+                self.assertTrue(is_valid_email(email), f"Should be valid: {email}")
+
+    def test_invalid_emails(self):
+        """Тест некорректных email адресов"""
+        invalid_emails = [
+            "test@",
+            "@domain.com",
+            "test.domain.com",
+            "test@domain",
+            "test@.",
+            "test@domain.",
+            "test@domain.c",
+            "",
+            "Петров@abc",
+        ]
+
+        for email in invalid_emails:
+            with self.subTest(email=email):
+                self.assertFalse(is_valid_email(email), f"Should be invalid: {email}")
+
+    def test_valid_phones(self):
+        """Тест корректных телефонов"""
+        valid_phones = [
+            "+972501234567",
+            "8-495-123-45-67",
+            "89161234567",
+            "7 (916) 123-45-67",
+            "+1-555-123-4567",
+            "050-123-4567",
+        ]
+
+        for phone in valid_phones:
+            with self.subTest(phone=phone):
+                self.assertTrue(is_valid_phone(phone), f"Should be valid: {phone}")
+
+    def test_invalid_phones(self):
+        """Тест некорректных телефонов"""
+        invalid_phones = [
+            "123456",
+            "1111111111111111",
+            "0000000000",
+            "abc-def-ghij",
+            "",
+            "12345",
+        ]
+
+        for phone in invalid_phones:
+            with self.subTest(phone=phone):
+                self.assertFalse(is_valid_phone(phone), f"Should be invalid: {phone}")
+
+    def test_extract_contact_info(self):
+        """Тест извлечения контактной информации"""
+        self.assertEqual(extract_contact_info("test@mail.ru"), "test@mail.ru")
+        self.assertEqual(extract_contact_info("+972501234567"), "+972501234567")
+
+        self.assertIsNone(extract_contact_info("Петров"))
+        self.assertIsNone(extract_contact_info("test@"))
+        self.assertIsNone(extract_contact_info("12345"))
+
+    def test_parser_integration(self):
+        """Тест интеграции с парсером"""
+        result = parse_participant_data("Иван Петров муж L церковь Грейс test@mail.ru")
+        self.assertEqual(result["ContactInformation"], "test@mail.ru")
+
+        result = parse_participant_data("Иван Петров муж L церковь Грейс Сидоров@")
         self.assertEqual(result["ContactInformation"], "")
 
 
