@@ -3,6 +3,7 @@ from logging.handlers import RotatingFileHandler
 import re
 from typing import List, Dict, Optional
 from dataclasses import asdict
+import time
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from functools import wraps
 from telegram.ext import (
@@ -17,6 +18,7 @@ from telegram.ext import (
 from config import BOT_TOKEN, BOT_USERNAME, COORDINATOR_IDS, VIEWER_IDS
 from utils.decorators import require_role
 from utils.cache import load_reference_data
+from utils.timeouts import set_edit_timeout, clear_expired_edit
 from database import init_database
 from repositories.participant_repository import SqliteParticipantRepository
 from services.participant_service import ParticipantService
@@ -113,6 +115,32 @@ def smart_cleanup_on_error(func):
                 )
 
             return CONFIRMING_DATA
+
+        except AttributeError as e:
+            if "job_queue" in str(e) or "run_once" in str(e):
+                logger.error(f"JobQueue error for user {user_id}: {e}")
+                try:
+                    if update.message:
+                        await update.message.reply_text(
+                            "⚠️ Техническая проблема с таймерами. Продолжайте редактирование.\n"
+                            "Введите новое значение или нажмите /cancel для отмены."
+                        )
+                    elif update.callback_query:
+                        await update.callback_query.answer()
+                        await update.callback_query.message.reply_text(
+                            "⚠️ Техническая проблема с таймерами. Продолжайте редактирование.\n"
+                            "Введите новое значение или нажмите /cancel для отмены."
+                        )
+                except Exception as send_error:
+                    logger.error(
+                        f"Failed to send timer error message to user {user_id}: {send_error}"
+                    )
+                participant_data = context.user_data.get("parsed_participant")
+                if participant_data:
+                    await show_confirmation(update, context, participant_data)
+                return context.user_data.get("current_state", CONFIRMING_DATA)
+            else:
+                raise
 
         except (DatabaseError, BotException) as e:
             # Серьёзные ошибки - очищаем состояние
@@ -264,13 +292,18 @@ async def _cleanup_messages(context: ContextTypes.DEFAULT_TYPE, chat_id: int):
 
 async def clear_field_to_edit(context: ContextTypes.DEFAULT_TYPE) -> None:
     """Removes stale field editing context for a user."""
-    user_id = context.job.data
-    user_data = context.application.user_data.get(user_id, {})
+    if context.job:
+        user_id = context.job.data
+        user_data = context.application.user_data.get(user_id, {})
+    else:
+        user_id = None
+        user_data = context.user_data
     if user_data.pop("field_to_edit", None):
         logger.info("Cleared stale field_to_edit for user %s", user_id)
     job = user_data.pop("clear_edit_job", None)
     if job:
         job.schedule_removal()
+    user_data.pop("edit_timeout", None)
 
 
 # --- Конец вспомогательных функций ---
@@ -1209,6 +1242,12 @@ async def handle_participant_confirmation(
         "Confirmation handler context for user %s: %s", user_id, context.user_data
     )
 
+    if clear_expired_edit(context):
+        await update.message.reply_text(
+            "⏳ Время редактирования истек. Выберите поле снова или нажмите /cancel."
+        )
+        return CONFIRMING_DATA
+
     field_to_edit = context.user_data.get("field_to_edit")
     clear_job = context.user_data.pop("clear_edit_job", None)
     if clear_job:
@@ -1230,10 +1269,17 @@ async def handle_participant_confirmation(
             )
             await update.message.reply_text(f"❌ {error_text}")
 
-            timeout_job = context.job_queue.run_once(
-                clear_field_to_edit, FIELD_EDIT_TIMEOUT, data=user_id
-            )
-            context.user_data["clear_edit_job"] = timeout_job
+            if context.job_queue:
+                timeout_job = context.job_queue.run_once(
+                    clear_field_to_edit, FIELD_EDIT_TIMEOUT, data=user_id
+                )
+                context.user_data["clear_edit_job"] = timeout_job
+            else:
+                logger.warning(
+                    "JobQueue not available for user %s, skipping timeout job",
+                    user_id,
+                )
+                set_edit_timeout(context, user_id, FIELD_EDIT_TIMEOUT)
             return CONFIRMING_DATA
 
         context.user_data["parsed_participant"] = updated_data
@@ -1274,10 +1320,16 @@ async def edit_field_callback(
     if job := context.user_data.get("clear_edit_job"):
         job.schedule_removal()
 
-    timeout_job = context.job_queue.run_once(
-        clear_field_to_edit, FIELD_EDIT_TIMEOUT, data=user_id
-    )
-    context.user_data["clear_edit_job"] = timeout_job
+    if context.job_queue:
+        timeout_job = context.job_queue.run_once(
+            clear_field_to_edit, FIELD_EDIT_TIMEOUT, data=user_id
+        )
+        context.user_data["clear_edit_job"] = timeout_job
+    else:
+        logger.warning(
+            f"JobQueue not available for user {user_id}, skipping timeout job"
+        )
+        set_edit_timeout(context, user_id, FIELD_EDIT_TIMEOUT)
 
     keyboard_map = {
         "Gender": get_gender_selection_keyboard,
@@ -1316,10 +1368,16 @@ async def handle_enum_selection(
 
         if job := context.user_data.get("clear_edit_job"):
             job.schedule_removal()
-        timeout_job = context.job_queue.run_once(
-            clear_field_to_edit, FIELD_EDIT_TIMEOUT, data=user_id
-        )
-        context.user_data["clear_edit_job"] = timeout_job
+        if context.job_queue:
+            timeout_job = context.job_queue.run_once(
+                clear_field_to_edit, FIELD_EDIT_TIMEOUT, data=user_id
+            )
+            context.user_data["clear_edit_job"] = timeout_job
+        else:
+            logger.warning(
+                f"JobQueue not available for user {user_id}, skipping timeout job"
+            )
+            set_edit_timeout(context, user_id, FIELD_EDIT_TIMEOUT)
 
         msg = await query.message.reply_text(
             f"Пришлите новое значение для поля **{field}**",
