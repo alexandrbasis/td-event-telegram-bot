@@ -19,6 +19,12 @@ from utils.recognizers import (
     recognize_church,
     recognize_city,
 )
+from constants import (
+    gender_from_display,
+    role_from_display,
+    size_from_display,
+    department_from_display,
+)
 
 
 @dataclass
@@ -435,13 +441,17 @@ def parse_template_format(text: str) -> Dict:
                     break
                 norm = value or ""
                 if eng == "Gender":
-                    norm = normalize_gender(value) or ""
+                    norm = gender_from_display(value) or normalize_gender(value) or ""
                 elif eng == "Role":
-                    norm = normalize_role(value) or ""
+                    norm = role_from_display(value) or normalize_role(value) or ""
                 elif eng == "Department":
-                    norm = normalize_department(value) or ""
+                    norm = (
+                        department_from_display(value)
+                        or normalize_department(value)
+                        or ""
+                    )
                 elif eng == "Size":
-                    norm = normalize_size(value) or ""
+                    norm = size_from_display(value) or normalize_size(value) or ""
                 data[eng] = norm
                 break
     logger.debug("parse_template_format parsed fields: %s", list(data.keys()))
@@ -972,11 +982,7 @@ class ParticipantParser:
                         church_words.append(all_words[i + 2])
                         self.processed_words.add(all_words[i + 2])
                 # Remove any identifier words
-                cleaned = [
-                    w
-                    for w in church_words
-                    if w.upper() not in CHURCH_KEYWORDS
-                ]
+                cleaned = [w for w in church_words if w.upper() not in CHURCH_KEYWORDS]
                 self.data["Church"] = " ".join(cleaned)
                 return  # Нашли через ключевые слова - выходим
 

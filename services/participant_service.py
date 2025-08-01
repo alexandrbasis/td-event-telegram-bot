@@ -13,6 +13,12 @@ from utils.exceptions import (
     ValidationError,
 )
 from parsers.participant_parser import normalize_field_value
+from constants import (
+    GENDER_DISPLAY,
+    ROLE_DISPLAY,
+    SIZE_DISPLAY,
+    DEPARTMENT_DISPLAY,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -73,22 +79,97 @@ def merge_participant_data(
 
 
 def format_participant_block(data: Dict) -> str:
+    gender_key = data.get("Gender") or ""
+    size_key = data.get("Size") or ""
+    role_key = data.get("Role") or ""
+    dept_key = data.get("Department") or ""
+
+    gender = GENDER_DISPLAY.get(gender_key, "Не указано")
+    size = SIZE_DISPLAY.get(size_key, "Не указано")
+    role = ROLE_DISPLAY.get(role_key, role_key)
+    department = DEPARTMENT_DISPLAY.get(dept_key, dept_key or "Не указано")
+
     text = (
         f"Имя (рус): {data.get('FullNameRU') or 'Не указано'}\n"
         f"Имя (англ): {data.get('FullNameEN') or 'Не указано'}\n"
-        f"Пол: {data.get('Gender')}\n"
-        f"Размер: {data.get('Size') or 'Не указано'}\n"
+        f"Пол: {gender}\n"
+        f"Размер: {size}\n"
         f"Церковь: {data.get('Church') or 'Не указано'}\n"
-        f"Роль: {data.get('Role')}"
+        f"Роль: {role}"
     )
-    if data.get("Role") == "TEAM":
-        text += f"\nДепартамент: {data.get('Department') or 'Не указано'}"
+
+    if role_key == "TEAM":
+        text += f"\nДепартамент: {department}"
+
     text += (
         f"\nГород: {data.get('CountryAndCity') or 'Не указано'}\n"
         f"Кто подал: {data.get('SubmittedBy') or 'Не указано'}\n"
         f"Контакты: {data.get('ContactInformation') or 'Не указано'}"
     )
     return text
+
+
+def get_gender_selection_keyboard() -> InlineKeyboardMarkup:
+    """Клавиатура для выбора пола."""
+    buttons = [
+        [InlineKeyboardButton("\U0001f468 Мужской", callback_data="gender_M")],
+        [InlineKeyboardButton("\U0001f469 Женский", callback_data="gender_F")],
+        [InlineKeyboardButton("❌ Отмена", callback_data="main_cancel")],
+    ]
+    return InlineKeyboardMarkup(buttons)
+
+
+def get_role_selection_keyboard() -> InlineKeyboardMarkup:
+    """Клавиатура для выбора роли."""
+    buttons = [
+        [InlineKeyboardButton("\U0001f464 Кандидат", callback_data="role_CANDIDATE")],
+        [InlineKeyboardButton("\U0001f465 Команда", callback_data="role_TEAM")],
+        [InlineKeyboardButton("✏️ Ввести вручную", callback_data="manual_input_Role")],
+        [InlineKeyboardButton("❌ Отмена", callback_data="main_cancel")],
+    ]
+    return InlineKeyboardMarkup(buttons)
+
+
+def get_size_selection_keyboard() -> InlineKeyboardMarkup:
+    """Клавиатура для выбора размера."""
+    buttons = [
+        [
+            InlineKeyboardButton("XS", callback_data="size_XS"),
+            InlineKeyboardButton("S", callback_data="size_S"),
+            InlineKeyboardButton("M", callback_data="size_M"),
+        ],
+        [
+            InlineKeyboardButton("L", callback_data="size_L"),
+            InlineKeyboardButton("XL", callback_data="size_XL"),
+            InlineKeyboardButton("XXL", callback_data="size_XXL"),
+        ],
+        [InlineKeyboardButton("3XL", callback_data="size_3XL")],
+        [InlineKeyboardButton("✏️ Ввести вручную", callback_data="manual_input_Size")],
+        [InlineKeyboardButton("❌ Отмена", callback_data="main_cancel")],
+    ]
+    return InlineKeyboardMarkup(buttons)
+
+
+def get_department_selection_keyboard() -> InlineKeyboardMarkup:
+    """Клавиатура для выбора департамента."""
+    buttons = []
+    dept_items = list(DEPARTMENT_DISPLAY.items())
+    for i in range(0, len(dept_items), 2):
+        row = []
+        for j in range(i, min(i + 2, len(dept_items))):
+            key, display_name = dept_items[j]
+            row.append(InlineKeyboardButton(display_name, callback_data=f"dept_{key}"))
+        buttons.append(row)
+
+    buttons.append(
+        [
+            InlineKeyboardButton(
+                "✏️ Ввести вручную", callback_data="manual_input_Department"
+            )
+        ]
+    )
+    buttons.append([InlineKeyboardButton("❌ Отмена", callback_data="main_cancel")])
+    return InlineKeyboardMarkup(buttons)
 
 
 def get_edit_keyboard(participant_data: Dict) -> InlineKeyboardMarkup:
@@ -123,7 +204,9 @@ def get_edit_keyboard(participant_data: Dict) -> InlineKeyboardMarkup:
     buttons.append(
         [
             InlineKeyboardButton("👨‍💼 Кто подал", callback_data="edit_SubmittedBy"),
-            InlineKeyboardButton("📞 Контакты", callback_data="edit_ContactInformation"),
+            InlineKeyboardButton(
+                "📞 Контакты", callback_data="edit_ContactInformation"
+            ),
         ]
     )
 
