@@ -285,6 +285,19 @@ class ParserTestCase(unittest.TestCase):
         self.assertEqual(data["FullNameRU"], "Анна-Мария Петрова-Сидорова")
         self.assertEqual(data["FullNameEN"], "Anne-Marie Johnson")
 
+    def test_digits_not_included_in_name(self):
+        """Цифровые токены не должны попадать в имя"""
+        text = "38833882 Иван Петров"
+        data = parse_participant_data(text)
+
+        self.assertEqual(data["FullNameRU"], "Иван Петров")
+        self.assertEqual(data["ContactInformation"], "")
+
+        text2 = "Иван 38833882 Петров"
+        data2 = parse_participant_data(text2)
+        self.assertEqual(data2["FullNameRU"], "Иван Петров")
+        self.assertEqual(data2["ContactInformation"], "")
+
 
 class SmartNameClassificationTestCase(unittest.TestCase):
     def test_simple_cases(self):
@@ -334,6 +347,11 @@ class SmartNameClassificationTestCase(unittest.TestCase):
         ru, en = _smart_name_classification(["Анна-Мария", "Anne-Marie"])
         self.assertEqual(ru, ["Анна-Мария"])
         self.assertEqual(en, ["Anne-Marie"])
+
+        # Токены с цифрами должны игнорироваться
+        ru, en = _smart_name_classification(["12345", "Иван", "678", "John"])
+        self.assertEqual(ru, ["Иван"])
+        self.assertEqual(en, ["John"])
 
 
 if __name__ == "__main__":

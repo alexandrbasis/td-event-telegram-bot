@@ -75,6 +75,14 @@ def merge_participant_data(
     if old_role == "TEAM" and merged.get("Role") == "CANDIDATE":
         merged["Department"] = ""
 
+    # Also clear department when switching to TEAM without specifying department
+    if (
+        old_role != "TEAM"
+        and merged.get("Role") == "TEAM"
+        and "Department" not in updates
+    ):
+        merged["Department"] = ""
+
     return merged
 
 
@@ -176,9 +184,7 @@ def get_department_selection_keyboard_required() -> InlineKeyboardMarkup:
         row = []
         for j in range(i, min(i + 2, len(dept_items))):
             key, display_name = dept_items[j]
-            row.append(
-                InlineKeyboardButton(display_name, callback_data=f"dept_{key}")
-            )
+            row.append(InlineKeyboardButton(display_name, callback_data=f"dept_{key}"))
         buttons.append(row)
 
     buttons.append([InlineKeyboardButton("↩️ Назад", callback_data="field_edit_cancel")])
@@ -331,6 +337,9 @@ def update_single_field(
 
     updated = participant_data.copy()
     updated[field_name] = normalized
+
+    if field_name == "Role" and normalized != original.get("Role"):
+        updated["Department"] = ""
 
     changes = detect_changes(original, updated)
     return updated, changes

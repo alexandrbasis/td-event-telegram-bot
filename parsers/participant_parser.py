@@ -504,11 +504,15 @@ def _smart_name_classification(words):
         english_parts = []
 
         for word in words:
+            # Исключаем слова с цифрами из имен
+            if any(char.isdigit() for char in word):
+                continue  # пропускаем цифровые токены
+
             # Убираем дефисы для проверки, что остались только буквы
             cleaned = word.replace("-", "")
             if cleaned.isalpha() and word.isascii():
                 english_parts.append(word)
-            else:
+            elif cleaned.isalpha():
                 russian_parts.append(word)
 
         return russian_parts, english_parts
@@ -522,6 +526,10 @@ def _smart_name_classification(words):
     current_type = None
 
     for word in words:
+        # Исключаем слова с цифрами из имен
+        if any(char.isdigit() for char in word):
+            continue  # пропускаем цифровые токены
+
         # Убираем дефисы для проверки, что остались только буквы
         cleaned = word.replace("-", "")
         word_type = "english" if (cleaned.isalpha() and word.isascii()) else "russian"
@@ -824,7 +832,7 @@ class ParticipantParser:
             "Gender": "",
             "Size": "",
             "Church": "",
-            "Role": "CANDIDATE",
+            "Role": "",
             "Department": "",
             "FullNameEN": "",
             "SubmittedBy": "",
@@ -1051,8 +1059,11 @@ class ParticipantParser:
 
         unprocessed_words = [w for w in all_words if w not in self.processed_words]
 
-        if unprocessed_words:
-            russian_parts, english_parts = _smart_name_classification(unprocessed_words)
+        # Убираем токены с цифрами перед классификацией имен
+        name_tokens = [w for w in unprocessed_words if not any(c.isdigit() for c in w)]
+
+        if name_tokens:
+            russian_parts, english_parts = _smart_name_classification(name_tokens)
 
             if russian_parts:
                 self.data["FullNameRU"] = " ".join(russian_parts)
@@ -1083,6 +1094,6 @@ def normalize_field_value(field_name: str, value: str) -> str:
         return normalize_size(value) or ""
 
     if field_name == "Role":
-        return normalize_role(value) or "CANDIDATE"
+        return normalize_role(value) or ""
 
     return value
