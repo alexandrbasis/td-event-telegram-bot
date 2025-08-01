@@ -298,7 +298,9 @@ async def clear_field_to_edit(context: ContextTypes.DEFAULT_TYPE) -> None:
     user_data.pop("edit_timeout", None)
 
 
-def safe_create_timeout_job(context: ContextTypes.DEFAULT_TYPE, callback, timeout: int, user_id: int):
+def safe_create_timeout_job(
+    context: ContextTypes.DEFAULT_TYPE, callback, timeout: int, user_id: int
+):
     """Safely create a timeout job if JobQueue is available."""
     if context.job_queue:
         return context.job_queue.run_once(callback, timeout, data=user_id)
@@ -309,7 +311,14 @@ def safe_create_timeout_job(context: ContextTypes.DEFAULT_TYPE, callback, timeou
 
 def _get_recover_edit_keyboard() -> InlineKeyboardMarkup:
     """Keyboard offering to resume editing after a technical issue."""
-    keyboard = [[InlineKeyboardButton("\ud83d\udd04 \u041f\u0440\u043e\u0434\u043e\u043b\u0436\u0438\u0442\u044c \u0440\u0435\u0434\u0430\u043a\u0442\u0438\u0440\u043e\u0432\u0430\u043d\u0438\u0435", callback_data="continue_editing")]]
+    keyboard = [
+        [
+            InlineKeyboardButton(
+                "\ud83d\udd04 \u041f\u0440\u043e\u0434\u043e\u043b\u0436\u0438\u0442\u044c \u0440\u0435\u0434\u0430\u043a\u0442\u0438\u0440\u043e\u0432\u0430\u043d\u0438\u0435",
+                callback_data="continue_editing",
+            )
+        ]
+    ]
     return InlineKeyboardMarkup(keyboard)
 
 
@@ -317,26 +326,37 @@ def get_recovery_keyboard(context: ContextTypes.DEFAULT_TYPE) -> InlineKeyboardM
     """Keyboard for restoring the dialog after a technical issue."""
     buttons = []
     if context.user_data.get("parsed_participant"):
-        buttons.append([
-            InlineKeyboardButton(
-                "\U0001f4dd \u041a \u043f\u043e\u0434\u0442\u0432\u0435\u0440\u0436\u0434\u0435\u043d\u0438\u044e",
-                callback_data="recover_confirmation",
-            )
-        ])
+        buttons.append(
+            [
+                InlineKeyboardButton(
+                    "\U0001f4dd \u041a \u043f\u043e\u0434\u0442\u0432\u0435\u0440\u0436\u0434\u0435\u043d\u0438\u044e",
+                    callback_data="recover_confirmation",
+                )
+            ]
+        )
     if context.user_data.get("add_flow_data"):
-        buttons.append([
+        buttons.append(
+            [
+                InlineKeyboardButton(
+                    "\u2795 \u041f\u0440\u043e\u0434\u043e\u043b\u0436\u0438\u0442\u044c \u0432\u0432\u043e\u0434",
+                    callback_data="recover_input",
+                )
+            ]
+        )
+    buttons.append(
+        [
             InlineKeyboardButton(
-                "\u2795 \u041f\u0440\u043e\u0434\u043e\u043b\u0436\u0438\u0442\u044c \u0432\u0432\u043e\u0434",
-                callback_data="recover_input",
+                "\ud83d\udd04 \u041d\u0430\u0447\u0430\u0442\u044c \u0437\u0430\u043d\u043e\u0432\u043e",
+                callback_data="main_add",
             )
-        ])
-    buttons.append([
-        InlineKeyboardButton("\ud83d\udd04 \u041d\u0430\u0447\u0430\u0442\u044c \u0437\u0430\u043d\u043e\u0432\u043e", callback_data="main_add")
-    ])
+        ]
+    )
     return InlineKeyboardMarkup(buttons)
 
 
-async def show_recovery_options(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+async def show_recovery_options(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> int:
     """Display recovery choices to the user."""
     keyboard = get_recovery_keyboard(context)
     try:
@@ -356,7 +376,9 @@ async def show_recovery_options(update: Update, context: ContextTypes.DEFAULT_TY
     return RECOVERING
 
 
-async def recover_from_technical_error(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+async def recover_from_technical_error(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> int:
     """Show technical error notice and present recovery options."""
     try:
         if update.callback_query:
@@ -570,6 +592,9 @@ def safe_merge_participant_data(existing: Dict, updates: Dict) -> Dict:
     for key, value in updates.items():
         if not existing.get(key) and value:
             existing[key] = value
+            if key == "Role":
+                if value == "TEAM" and "Department" not in updates:
+                    existing["Department"] = ""
     return existing
 
 
@@ -1527,7 +1552,6 @@ async def handle_enum_selection(
     current_state = context.user_data.get("current_state", CONFIRMING_DATA)
     filling_context = context.user_data.get("filling_missing_field", False)
 
-
     match = re.match(r"^(gender|role|size|dept)_(.+)$", data)
     if not match:
         return current_state
@@ -1543,7 +1567,11 @@ async def handle_enum_selection(
 
     if filling_context or current_state in (COLLECTING_DATA, FILLING_MISSING_FIELDS):
         participant_data = context.user_data.get("add_flow_data", {})
+        before_role = participant_data.get("Role")
         participant_data, _ = update_single_field(participant_data, field, value)
+        if field == "Role" and value:
+            if value == "TEAM" or before_role == "TEAM":
+                participant_data["Department"] = ""
         context.user_data["add_flow_data"] = participant_data
         next_field = get_next_missing_field(participant_data)
         if next_field is None:
@@ -1557,7 +1585,11 @@ async def handle_enum_selection(
         return FILLING_MISSING_FIELDS
 
     participant_data = context.user_data.get("parsed_participant", {})
+    before_role = participant_data.get("Role")
     updated_data, _changes = update_single_field(participant_data, field, value)
+    if field == "Role" and value:
+        if value == "TEAM" or before_role == "TEAM":
+            updated_data["Department"] = ""
     context.user_data["parsed_participant"] = updated_data
     context.user_data.pop("field_to_edit", None)
 
@@ -1621,7 +1653,9 @@ async def handle_field_edit_cancel(
 
 
 @smart_cleanup_on_error
-async def handle_recover_confirmation(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+async def handle_recover_confirmation(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> int:
     """Return to the confirmation step after recovery."""
     query = update.callback_query
     await query.answer()
@@ -1634,7 +1668,9 @@ async def handle_recover_confirmation(update: Update, context: ContextTypes.DEFA
 
 
 @smart_cleanup_on_error
-async def handle_recover_input(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+async def handle_recover_input(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> int:
     """Resume input of missing fields after recovery."""
     query = update.callback_query
     await query.answer()
@@ -1783,10 +1819,8 @@ def main():
                 CallbackQueryHandler(
                     handle_recover_confirmation, pattern="^recover_confirmation$"
                 ),
-                CallbackQueryHandler(
-                    handle_recover_input, pattern="^recover_input$"
-                ),
-                CallbackQueryHandler(handle_add_callback, pattern="^main_add$")
+                CallbackQueryHandler(handle_recover_input, pattern="^recover_input$"),
+                CallbackQueryHandler(handle_add_callback, pattern="^main_add$"),
             ],
         },
         fallbacks=[

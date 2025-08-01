@@ -1,6 +1,7 @@
 from dataclasses import dataclass, field
 from typing import Optional
 
+
 @dataclass
 class Participant:
     # Required field without a default
@@ -10,7 +11,7 @@ class Participant:
     Gender: str = "F"
     Size: str = ""
     Church: str = ""
-    Role: str = "CANDIDATE"
+    Role: str = ""
     Department: str = ""
     FullNameEN: str = ""
     SubmittedBy: str = ""

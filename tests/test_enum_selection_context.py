@@ -58,10 +58,33 @@ class EnumSelectionContextTestCase(unittest.IsolatedAsyncioTestCase):
             "main.show_interactive_missing_field", new=AsyncMock()
         ) as mock_show, patch("main.show_confirmation", new=AsyncMock()) as mock_conf:
             state = await handle_enum_selection(update, context)
-        mock_show.assert_not_awaited()
+        mock_show.assert_awaited_once()
+        mock_conf.assert_not_awaited()
+        self.assertEqual(state, FILLING_MISSING_FIELDS)
+        self.assertTrue(context.user_data.get("filling_missing_field", False))
+        self.assertEqual(context.user_data["add_flow_data"]["Department"], "")
+
+    async def test_edit_role_clears_department(self):
+        query = MagicMock()
+        query.answer = AsyncMock()
+        query.message = MagicMock()
+        query.message.reply_text = AsyncMock()
+        query.data = "role_CANDIDATE"
+        update = SimpleNamespace(
+            callback_query=query, effective_user=SimpleNamespace(id=1)
+        )
+        context = SimpleNamespace(
+            user_data={
+                "parsed_participant": {"Role": "TEAM", "Department": "Worship"},
+                "current_state": CONFIRMING_DATA,
+            }
+        )
+        with patch("main.show_confirmation", new=AsyncMock()) as mock_conf:
+            state = await handle_enum_selection(update, context)
         mock_conf.assert_awaited_once()
         self.assertEqual(state, CONFIRMING_DATA)
-        self.assertFalse(context.user_data.get("filling_missing_field", True))
+        self.assertEqual(context.user_data["parsed_participant"]["Department"], "")
+
 
 if __name__ == "__main__":
     unittest.main()
