@@ -35,7 +35,7 @@ class EditKeyboardTestCase(unittest.TestCase):
         datas = [b.callback_data for row in kb.inline_keyboard for b in row]
         self.assertIn("gender_M", datas)
         self.assertIn("gender_F", datas)
-        self.assertIn("main_cancel", datas)
+        self.assertIn("field_edit_cancel", datas)
 
     def test_role_selection_keyboard(self):
         kb = get_role_selection_keyboard()
@@ -43,6 +43,7 @@ class EditKeyboardTestCase(unittest.TestCase):
         self.assertIn("role_CANDIDATE", datas)
         self.assertIn("role_TEAM", datas)
         self.assertIn("manual_input_Role", datas)
+        self.assertIn("field_edit_cancel", datas)
 
     def test_size_selection_keyboard(self):
         kb = get_size_selection_keyboard()
@@ -50,6 +51,7 @@ class EditKeyboardTestCase(unittest.TestCase):
         self.assertIn("size_XS", datas)
         self.assertIn("size_M", datas)
         self.assertIn("manual_input_Size", datas)
+        self.assertIn("field_edit_cancel", datas)
 
     def test_department_selection_keyboard(self):
         kb = get_department_selection_keyboard()
@@ -57,6 +59,7 @@ class EditKeyboardTestCase(unittest.TestCase):
         self.assertIn("dept_ROE", datas)
         self.assertIn("dept_Kitchen", datas)
         self.assertIn("manual_input_Department", datas)
+        self.assertIn("field_edit_cancel", datas)
 
 
 if __name__ == "__main__":

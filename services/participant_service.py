@@ -114,7 +114,7 @@ def get_gender_selection_keyboard() -> InlineKeyboardMarkup:
     buttons = [
         [InlineKeyboardButton("\U0001f468 Мужской", callback_data="gender_M")],
         [InlineKeyboardButton("\U0001f469 Женский", callback_data="gender_F")],
-        [InlineKeyboardButton("❌ Отмена", callback_data="main_cancel")],
+        [InlineKeyboardButton("↩️ Назад", callback_data="field_edit_cancel")],
     ]
     return InlineKeyboardMarkup(buttons)
 
@@ -125,7 +125,7 @@ def get_role_selection_keyboard() -> InlineKeyboardMarkup:
         [InlineKeyboardButton("\U0001f464 Кандидат", callback_data="role_CANDIDATE")],
         [InlineKeyboardButton("\U0001f465 Команда", callback_data="role_TEAM")],
         [InlineKeyboardButton("✏️ Ввести вручную", callback_data="manual_input_Role")],
-        [InlineKeyboardButton("❌ Отмена", callback_data="main_cancel")],
+        [InlineKeyboardButton("↩️ Назад", callback_data="field_edit_cancel")],
     ]
     return InlineKeyboardMarkup(buttons)
 
@@ -145,7 +145,7 @@ def get_size_selection_keyboard() -> InlineKeyboardMarkup:
         ],
         [InlineKeyboardButton("3XL", callback_data="size_3XL")],
         [InlineKeyboardButton("✏️ Ввести вручную", callback_data="manual_input_Size")],
-        [InlineKeyboardButton("❌ Отмена", callback_data="main_cancel")],
+        [InlineKeyboardButton("↩️ Назад", callback_data="field_edit_cancel")],
     ]
     return InlineKeyboardMarkup(buttons)
 
@@ -168,7 +168,7 @@ def get_department_selection_keyboard() -> InlineKeyboardMarkup:
             )
         ]
     )
-    buttons.append([InlineKeyboardButton("❌ Отмена", callback_data="main_cancel")])
+    buttons.append([InlineKeyboardButton("↩️ Назад", callback_data="field_edit_cancel")])
     return InlineKeyboardMarkup(buttons)
 
 
