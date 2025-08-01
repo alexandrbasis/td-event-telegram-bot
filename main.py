@@ -408,6 +408,34 @@ def _get_return_to_menu_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(keyboard)
 
 
+async def _send_response_with_menu_button(
+    update: Update,
+    text: str,
+    *,
+    parse_mode: str = "Markdown",
+) -> None:
+    """Reply with text and a 'Return to menu' button for both command and callback handlers."""
+    try:
+        if update.callback_query:
+            await update.callback_query.message.reply_text(
+                text,
+                parse_mode=parse_mode,
+                reply_markup=_get_return_to_menu_keyboard(),
+            )
+        else:
+            await update.message.reply_text(
+                text,
+                parse_mode=parse_mode,
+                reply_markup=_get_return_to_menu_keyboard(),
+            )
+    except Exception as e:  # pragma: no cover - just log
+        logger.error(f"Error sending response with menu button: {e}")
+        if update.callback_query:
+            await update.callback_query.message.reply_text(text, parse_mode=parse_mode)
+        else:
+            await update.message.reply_text(text, parse_mode=parse_mode)
+
+
 # --- HELPER FUNCTIONS (NEW) ---
 
 
@@ -566,10 +594,17 @@ async def handle_main_menu_callback(update: Update, context: ContextTypes.DEFAUL
 
     await query.edit_message_reply_markup(reply_markup=None)
 
+    if data == "main_cancel":
+        await _cleanup_messages(context, update.effective_chat.id)
+        cleanup_user_data_safe(context, update.effective_user.id)
+        await _show_main_menu(update, context, is_return=True)
+        return
+
     if data == "main_menu":
         await _show_main_menu(update, context, is_return=True)
         return
 
+    # main_list mirrors the /list command
     if data == "main_list":
         participants = participant_service.get_all_participants()
         if not participants:
@@ -589,18 +624,20 @@ async def handle_main_menu_callback(update: Update, context: ContextTypes.DEFAUL
             message += f"   • Роль: {p.Role}{department}\n"
             message += f"   • ID: {p.id}\n\n"
 
-        await query.message.reply_text(message, parse_mode="Markdown")
+        await _send_response_with_menu_button(update, message)
         return
 
+    # main_export mirrors the /export command
     if data == "main_export":
-        await query.message.reply_text(
+        await _send_response_with_menu_button(
+            update,
             "📤 **Экспорт данных** (заглушка)\n\n"
             "🔧 Функция в разработке.\n"
             "Пример: /export worship team - экспорт участников worship команды",
-            parse_mode="Markdown",
         )
         return
 
+    # main_help mirrors the /help command
     if data == "main_help":
         help_text = """
 📖 **Справка по командам:**
@@ -624,10 +661,11 @@ async def handle_main_menu_callback(update: Update, context: ContextTypes.DEFAUL
 "Кто живет в комнате 203A?"
         """
 
-        await query.message.reply_text(help_text, parse_mode="Markdown")
+        await _send_response_with_menu_button(update, help_text)
         return
 
 
+# Equivalent to the main_help callback handler
 # Команда /help
 @require_role("viewer")
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -657,11 +695,7 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 "Кто живет в комнате 203A?"
     """
 
-    await update.message.reply_text(
-        help_text,
-        parse_mode="Markdown",
-        reply_markup=_get_return_to_menu_keyboard(),
-    )
+    await _send_response_with_menu_button(update, help_text)
 
 
 # Команда /add
@@ -801,11 +835,11 @@ async def edit_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     role = get_user_role(user_id)
     logger.info("User %s started edit participant", user_id)
 
-    await update.message.reply_text(
+    await _send_response_with_menu_button(
+        update,
         "✏️ **Редактирование участника** (заглушка)\n\n"
         "🔧 Функция в разработке.\n"
         "Пример: /edit 123 - редактировать участника с ID 123",
-        parse_mode="Markdown",
     )
 
 
@@ -816,11 +850,11 @@ async def delete_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     role = get_user_role(user_id)
     logger.info("User %s started delete participant", user_id)
 
-    await update.message.reply_text(
+    await _send_response_with_menu_button(
+        update,
         "🗑️ **Удаление участника** (заглушка)\n\n"
         "🔧 Функция в разработке.\n"
         "Пример: /delete 123 - удалить участника с ID 123",
-        parse_mode="Markdown",
     )
 
 
@@ -876,6 +910,7 @@ async def edit_field_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
 
 # Команда /list
+# Equivalent to the main_list callback handler
 @require_role("viewer")
 async def list_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
@@ -903,25 +938,22 @@ async def list_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         message += f"   • Роль: {p.Role}{department}\n"
         message += f"   • ID: {p.id}\n\n"
 
-    await update.message.reply_text(
-        message,
-        parse_mode="Markdown",
-        reply_markup=_get_return_to_menu_keyboard(),
-    )
+    await _send_response_with_menu_button(update, message)
 
 
 # Команда /export
+# Equivalent to the main_export callback handler
 @require_role("viewer")
 async def export_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     role = get_user_role(user_id)
     logger.info("User %s requested export", user_id)
 
-    await update.message.reply_text(
+    await _send_response_with_menu_button(
+        update,
         "📤 **Экспорт данных** (заглушка)\n\n"
         "🔧 Функция в разработке.\n"
         "Пример: /export worship team - экспорт участников worship команды",
-        parse_mode="Markdown",
     )
 
 
@@ -1404,7 +1436,7 @@ def main():
     application.add_handler(CommandHandler("help", help_command))
     application.add_handler(
         CallbackQueryHandler(
-            handle_main_menu_callback, pattern="^main_(list|export|help|menu)$"
+            handle_main_menu_callback, pattern="^main_(list|export|help|menu|cancel)$"
         )
     )
     application.add_handler(CommandHandler("edit", edit_command))
