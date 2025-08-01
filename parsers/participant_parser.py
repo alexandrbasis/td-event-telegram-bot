@@ -431,6 +431,15 @@ TEMPLATE_FIELD_MAP = {
     "Контакты": "ContactInformation",
 }
 
+# Mapping of Cyrillic size abbreviations to Latin equivalents for template parsing
+CYRILLIC_TO_LATIN = {
+    "м": "M",
+    "л": "L",
+    "с": "S",
+    "хс": "XS",
+    "хл": "XL",
+}
+
 
 def is_template_format(text: str) -> bool:
     """Определяет, похоже ли сообщение на заполненный шаблон."""
@@ -479,6 +488,7 @@ def parse_template_format(text: str) -> Dict:
                         or ""
                     )
                 elif eng == "Size":
+                    value = CYRILLIC_TO_LATIN.get(value.lower(), value)
                     norm = size_from_display(value) or normalize_size(value) or ""
                 data[eng] = norm
                 break
