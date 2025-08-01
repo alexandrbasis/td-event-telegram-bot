@@ -4,6 +4,7 @@ from parsers.participant_parser import (
     is_template_format,
     parse_template_format,
     parse_unstructured_text,
+    detect_field_update_intent,
     _smart_name_classification,
 )
 from utils.cache import load_reference_data, cache
@@ -176,6 +177,28 @@ class ParserTestCase(unittest.TestCase):
         self.assertEqual(data["Church"], "Грейс")
         self.assertEqual(data["CountryAndCity"], "ХАЙФА")
 
+    def test_field_value_patterns_consumed(self):
+        text = "размер M Иван"
+        data = parse_unstructured_text(text)
+        self.assertEqual(data["Size"], "M")
+        self.assertEqual(data["FullNameRU"], "Иван")
+
+        text = "пол женский Мария"
+        data = parse_unstructured_text(text)
+        self.assertEqual(data["Gender"], "F")
+        self.assertEqual(data["FullNameRU"], "Мария")
+
+    def test_field_value_regex_multiple(self):
+        text = "пол мужской размер L Иван"
+        data = parse_unstructured_text(text)
+        self.assertEqual(data["Gender"], "M")
+        self.assertEqual(data["Size"], "L")
+        self.assertEqual(data["FullNameRU"], "Иван")
+
+    def test_update_intent_synonyms(self):
+        self.assertEqual(detect_field_update_intent("футболка"), "Size")
+        self.assertEqual(detect_field_update_intent("мужской"), "Gender")
+
     def test_m_gender_size_conflict_resolution(self):
         """Тест разрешения конфликта M между полом и размером"""
         result = parse_participant_data("Мария размер M церковь Грейс")
@@ -251,9 +274,7 @@ class ParserTestCase(unittest.TestCase):
 
     def test_name_with_hyphens_and_special_chars(self):
         """Тест имен с дефисами и специальными символами"""
-        text = (
-            "Анна-Мария Петрова-Сидорова Anne-Marie Johnson жен S церковь Грейс"
-        )
+        text = "Анна-Мария Петрова-Сидорова Anne-Marie Johnson жен S церковь Грейс"
         data = parse_participant_data(text)
 
         self.assertEqual(data["FullNameRU"], "Анна-Мария Петрова-Сидорова")
@@ -308,6 +329,7 @@ class SmartNameClassificationTestCase(unittest.TestCase):
         ru, en = _smart_name_classification(["Анна-Мария", "Anne-Marie"])
         self.assertEqual(ru, ["Анна-Мария"])
         self.assertEqual(en, ["Anne-Marie"])
+
 
 if __name__ == "__main__":
     unittest.main()

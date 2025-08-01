@@ -377,8 +377,8 @@ CONFIRMATION_NOISE_WORDS = {
 
 # Подсказки для определения поля при исправлении
 FIELD_INDICATORS = {
-    "Gender": ["ПОЛ", "GENDER"],
-    "Size": ["РАЗМЕР", "SIZE"],
+    "Gender": ["ПОЛ", "GENDER", "МУЖСКОЙ", "ЖЕНСКИЙ"],
+    "Size": ["РАЗМЕР", "SIZE", "ОДЕЖДА", "ФУТБОЛКА"],
     "Role": ["РОЛЬ", "ROLE"],
     "Department": ["ДЕПАРТАМЕНТ", "DEPARTMENT"],
     "Church": ["ЦЕРКОВЬ", "CHURCH"],
@@ -388,6 +388,34 @@ FIELD_INDICATORS = {
     "SubmittedBy": ["ПОДАЛ", "SUBMITTED"],
     "ContactInformation": ["КОНТАКТ", "ТЕЛЕФОН", "EMAIL", "PHONE"],
 }
+
+# Patterns for "field value" expressions like "\u0440\u0430\u0437\u043C\u0435\u0440 M"
+FIELD_VALUE_PATTERNS = {
+    "размер": ("Size", normalize_size),
+    "пол": ("Gender", normalize_gender),
+    "роль": ("Role", normalize_role),
+    "департамент": ("Department", normalize_department),
+}
+
+
+def detect_field_value_pattern(text: str) -> tuple[Dict[str, str], str]:
+    """Detects patterns like "размер M" and returns parsed values and cleaned text."""
+
+    pattern = re.compile(r"(размер|пол|роль|департамент)\s+(\w+)", re.IGNORECASE)
+    data: Dict[str, str] = {}
+
+    def replace(match: re.Match) -> str:
+        key = match.group(1).lower()
+        value = match.group(2)
+        field, normalizer = FIELD_VALUE_PATTERNS.get(key, (None, None))
+        if field and field not in data:
+            normalized = normalizer(value) or value.capitalize()
+            data[field] = normalized
+        return " "
+
+    cleaned = re.sub(pattern, replace, text)
+    return data, cleaned
+
 
 # Поля шаблона и их соответствие ключам базы данных
 TEMPLATE_FIELD_MAP = {
@@ -515,6 +543,8 @@ def _smart_name_classification(words):
 def parse_unstructured_text(text: str) -> Dict[str, str]:
     """Parses unstructured text using a non-destructive, prioritized, multi-pass strategy."""
     participant_data: Dict[str, str] = {}
+    fv_data, text = detect_field_value_pattern(text)
+    participant_data.update(fv_data)
     tokens = text.split()
     # A list to mark which tokens have been successfully parsed and "consumed"
     consumed = [False] * len(tokens)
