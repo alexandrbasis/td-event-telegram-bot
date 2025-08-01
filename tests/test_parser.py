@@ -54,6 +54,11 @@ class ParserTestCase(unittest.TestCase):
         self.assertEqual(data["Size"], "L")
         self.assertEqual(data["Church"], "Благодать")
 
+    def test_template_cyrillic_size_m(self):
+        text = "Имя (рус): Иван Петров, Размер: м"
+        data = parse_template_format(text)
+        self.assertEqual(data["Size"], "M")
+
     def test_medium_size_not_in_submitted_by(self):
         """Тест проверяет, что 'medium' распознается как размер, а не как часть имени подавшего"""
         text = "Тест Басис тим админ община грейс муж Хайфа от Ирина Цой medium"

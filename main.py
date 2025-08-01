@@ -37,9 +37,14 @@ from services.participant_service import (
     get_edit_keyboard,
     FIELD_LABELS,
     get_gender_selection_keyboard,
+    get_gender_selection_keyboard_simple,
     get_role_selection_keyboard,
     get_size_selection_keyboard,
     get_department_selection_keyboard,
+    get_gender_selection_keyboard_required,
+    get_size_selection_keyboard_required,
+    get_role_selection_keyboard_required,
+    get_department_selection_keyboard_required,
 )
 from utils.validators import validate_participant_data
 from utils.exceptions import (
@@ -54,6 +59,7 @@ from states import (
     CONFIRMING_DUPLICATE,
     COLLECTING_DATA,
     FILLING_MISSING_FIELDS,
+    RECOVERING,
 )
 
 
@@ -125,28 +131,8 @@ def smart_cleanup_on_error(func):
         except AttributeError as e:
             if "job_queue" in str(e) or "run_once" in str(e):
                 logger.error(f"JobQueue error for user {user_id}: {e}")
-                try:
-                    if update.message:
-                        await update.message.reply_text(
-                            "⚠️ Техническая проблема с таймерами. Продолжайте редактирование.\n"
-                            "Введите новое значение или нажмите /cancel для отмены."
-                        )
-                    elif update.callback_query:
-                        await update.callback_query.answer()
-                        await update.callback_query.message.reply_text(
-                            "⚠️ Техническая проблема с таймерами. Продолжайте редактирование.\n"
-                            "Введите новое значение или нажмите /cancel для отмены."
-                        )
-                except Exception as send_error:
-                    logger.error(
-                        f"Failed to send timer error message to user {user_id}: {send_error}"
-                    )
-                participant_data = context.user_data.get("parsed_participant")
-                if participant_data:
-                    await show_confirmation(update, context, participant_data)
-                return context.user_data.get("current_state", CONFIRMING_DATA)
-            else:
-                raise
+                return await recover_from_technical_error(update, context)
+            raise
 
         except (DatabaseError, BotException) as e:
             # Серьёзные ошибки - очищаем состояние
@@ -312,6 +298,79 @@ async def clear_field_to_edit(context: ContextTypes.DEFAULT_TYPE) -> None:
     user_data.pop("edit_timeout", None)
 
 
+def safe_create_timeout_job(context: ContextTypes.DEFAULT_TYPE, callback, timeout: int, user_id: int):
+    """Safely create a timeout job if JobQueue is available."""
+    if context.job_queue:
+        return context.job_queue.run_once(callback, timeout, data=user_id)
+    logger.warning(f"JobQueue not available for user {user_id}")
+    set_edit_timeout(context, user_id, timeout)
+    return None
+
+
+def _get_recover_edit_keyboard() -> InlineKeyboardMarkup:
+    """Keyboard offering to resume editing after a technical issue."""
+    keyboard = [[InlineKeyboardButton("\ud83d\udd04 \u041f\u0440\u043e\u0434\u043e\u043b\u0436\u0438\u0442\u044c \u0440\u0435\u0434\u0430\u043a\u0442\u0438\u0440\u043e\u0432\u0430\u043d\u0438\u0435", callback_data="continue_editing")]]
+    return InlineKeyboardMarkup(keyboard)
+
+
+def get_recovery_keyboard(context: ContextTypes.DEFAULT_TYPE) -> InlineKeyboardMarkup:
+    """Keyboard for restoring the dialog after a technical issue."""
+    buttons = []
+    if context.user_data.get("parsed_participant"):
+        buttons.append([
+            InlineKeyboardButton(
+                "\U0001f4dd \u041a \u043f\u043e\u0434\u0442\u0432\u0435\u0440\u0436\u0434\u0435\u043d\u0438\u044e",
+                callback_data="recover_confirmation",
+            )
+        ])
+    if context.user_data.get("add_flow_data"):
+        buttons.append([
+            InlineKeyboardButton(
+                "\u2795 \u041f\u0440\u043e\u0434\u043e\u043b\u0436\u0438\u0442\u044c \u0432\u0432\u043e\u0434",
+                callback_data="recover_input",
+            )
+        ])
+    buttons.append([
+        InlineKeyboardButton("\ud83d\udd04 \u041d\u0430\u0447\u0430\u0442\u044c \u0437\u0430\u043d\u043e\u0432\u043e", callback_data="main_add")
+    ])
+    return InlineKeyboardMarkup(buttons)
+
+
+async def show_recovery_options(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Display recovery choices to the user."""
+    keyboard = get_recovery_keyboard(context)
+    try:
+        msg = await update.effective_message.reply_text(
+            "\u26a0\ufe0f \u0422\u0435\u0445\u043d\u0438\u0447\u0435\u0441\u043a\u0430\u044f \u043f\u0440\u043e\u0431\u043b\u0435\u043c\u0430. \u041a\u0430\u043a \u0434\u0435\u0439\u0441\u0442\u0432\u043e\u0432\u0430\u0442\u044c?",
+            reply_markup=keyboard,
+        )
+    except Exception as send_error:  # pragma: no cover - just log
+        logger.error(
+            "Failed to show recovery options to user %s: %s",
+            update.effective_user.id if update.effective_user else "unknown",
+            send_error,
+        )
+    else:
+        _add_message_to_cleanup(context, msg.message_id)
+    context.user_data["current_state"] = RECOVERING
+    return RECOVERING
+
+
+async def recover_from_technical_error(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Show technical error notice and present recovery options."""
+    try:
+        if update.callback_query:
+            await update.callback_query.answer()
+        return await show_recovery_options(update, context)
+    except Exception as send_error:  # pragma: no cover - just log
+        logger.error(
+            "Failed to recover from technical error for user %s: %s",
+            update.effective_user.id if update.effective_user else "unknown",
+            send_error,
+        )
+        return context.user_data.get("current_state", CONFIRMING_DATA)
+
+
 # --- Конец вспомогательных функций ---
 
 
@@ -357,10 +416,10 @@ OPTIONAL_FIELDS = [
 
 # Field to keyboard mapping for interactive prompts during /add flow
 FIELD_KEYBOARDS = {
-    "Gender": get_gender_selection_keyboard,
-    "Size": get_size_selection_keyboard,
-    "Role": get_role_selection_keyboard,
-    "Department": get_department_selection_keyboard,
+    "Gender": get_gender_selection_keyboard_required,
+    "Size": get_size_selection_keyboard_required,
+    "Role": get_role_selection_keyboard_required,
+    "Department": get_department_selection_keyboard_required,
 }
 
 
@@ -403,6 +462,7 @@ async def show_confirmation(
 
     # Сохраняем текущее состояние для декоратора
     context.user_data["current_state"] = CONFIRMING_DATA
+    context.user_data["filling_missing_field"] = False
 
 
 def get_duplicate_keyboard() -> InlineKeyboardMarkup:
@@ -532,22 +592,20 @@ def get_next_missing_field(participant_data: Dict) -> Optional[str]:
     return missing[0] if missing else None
 
 
-async def show_missing_field_prompt(
+async def show_interactive_missing_field(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
     participant_data: Dict,
 ) -> None:
-    """Prompt user to fill the next missing field with keyboard if available."""
+    """Prompt user to fill the next missing field showing the keyboard if available."""
 
-    queue = context.user_data.get("missing_fields_queue")
-    if not queue:
-        queue = get_missing_field_keys(participant_data)
-        context.user_data["missing_fields_queue"] = queue
+    # Mark that we are in the context of filling missing fields
+    context.user_data["filling_missing_field"] = True
 
-    if not queue:
+    field = get_next_missing_field(participant_data)
+    if not field:
         return
 
-    field = queue[0]
     context.user_data["waiting_for_field"] = field
 
     cancel_markup = InlineKeyboardMarkup(
@@ -884,7 +942,7 @@ async def handle_partial_data(
             await show_confirmation(update, context, participant_data)
             context.user_data["current_state"] = CONFIRMING_DATA
             return CONFIRMING_DATA
-        await show_missing_field_prompt(update, context, participant_data)
+        await show_interactive_missing_field(update, context, participant_data)
         context.user_data["current_state"] = FILLING_MISSING_FIELDS
         return FILLING_MISSING_FIELDS
 
@@ -950,8 +1008,7 @@ async def handle_partial_data(
         context.user_data["current_state"] = CONFIRMING_DATA
         return CONFIRMING_DATA
     else:
-        context.user_data["missing_fields_queue"] = missing_fields
-        await show_missing_field_prompt(update, context, participant_data)
+        await show_interactive_missing_field(update, context, participant_data)
         context.user_data["current_state"] = FILLING_MISSING_FIELDS
         return FILLING_MISSING_FIELDS
 
@@ -980,8 +1037,7 @@ async def handle_missing_field_input(
         context.user_data["current_state"] = CONFIRMING_DATA
         return CONFIRMING_DATA
 
-    context.user_data["missing_fields_queue"] = missing_fields
-    await show_missing_field_prompt(update, context, participant_data)
+    await show_interactive_missing_field(update, context, participant_data)
     context.user_data["current_state"] = FILLING_MISSING_FIELDS
     return FILLING_MISSING_FIELDS
 
@@ -1389,17 +1445,11 @@ async def handle_participant_confirmation(
             )
             await update.message.reply_text(f"❌ {error_text}")
 
-            if context.job_queue:
-                timeout_job = context.job_queue.run_once(
-                    clear_field_to_edit, FIELD_EDIT_TIMEOUT, data=user_id
-                )
+            timeout_job = safe_create_timeout_job(
+                context, clear_field_to_edit, FIELD_EDIT_TIMEOUT, user_id
+            )
+            if timeout_job:
                 context.user_data["clear_edit_job"] = timeout_job
-            else:
-                logger.warning(
-                    "JobQueue not available for user %s, skipping timeout job",
-                    user_id,
-                )
-                set_edit_timeout(context, user_id, FIELD_EDIT_TIMEOUT)
             return CONFIRMING_DATA
 
         context.user_data["parsed_participant"] = updated_data
@@ -1440,19 +1490,14 @@ async def edit_field_callback(
     if job := context.user_data.get("clear_edit_job"):
         job.schedule_removal()
 
-    if context.job_queue:
-        timeout_job = context.job_queue.run_once(
-            clear_field_to_edit, FIELD_EDIT_TIMEOUT, data=user_id
-        )
+    timeout_job = safe_create_timeout_job(
+        context, clear_field_to_edit, FIELD_EDIT_TIMEOUT, user_id
+    )
+    if timeout_job:
         context.user_data["clear_edit_job"] = timeout_job
-    else:
-        logger.warning(
-            f"JobQueue not available for user {user_id}, skipping timeout job"
-        )
-        set_edit_timeout(context, user_id, FIELD_EDIT_TIMEOUT)
 
     keyboard_map = {
-        "Gender": get_gender_selection_keyboard,
+        "Gender": get_gender_selection_keyboard_simple,
         "Role": get_role_selection_keyboard,
         "Size": get_size_selection_keyboard,
         "Department": get_department_selection_keyboard,
@@ -1482,10 +1527,14 @@ async def handle_enum_selection(
     data = query.data
     user_id = update.effective_user.id
     current_state = context.user_data.get("current_state", CONFIRMING_DATA)
+    filling_context = context.user_data.get("filling_missing_field", False)
 
     if data.startswith("manual_input_"):
         field = data.split("_", 1)[1]
-        if current_state in (COLLECTING_DATA, FILLING_MISSING_FIELDS):
+        if (
+            current_state in (COLLECTING_DATA, FILLING_MISSING_FIELDS)
+            or filling_context
+        ):
             context.user_data["waiting_for_field"] = field
             cancel_markup = InlineKeyboardMarkup(
                 [[InlineKeyboardButton("❌ Отмена", callback_data="main_cancel")]]
@@ -1497,22 +1546,18 @@ async def handle_enum_selection(
             )
             _add_message_to_cleanup(context, msg.message_id)
             context.user_data["current_state"] = FILLING_MISSING_FIELDS
+            context.user_data["filling_missing_field"] = True
             return FILLING_MISSING_FIELDS
 
         context.user_data["field_to_edit"] = field
 
         if job := context.user_data.get("clear_edit_job"):
             job.schedule_removal()
-        if context.job_queue:
-            timeout_job = context.job_queue.run_once(
-                clear_field_to_edit, FIELD_EDIT_TIMEOUT, data=user_id
-            )
+        timeout_job = safe_create_timeout_job(
+            context, clear_field_to_edit, FIELD_EDIT_TIMEOUT, user_id
+        )
+        if timeout_job:
             context.user_data["clear_edit_job"] = timeout_job
-        else:
-            logger.warning(
-                f"JobQueue not available for user {user_id}, skipping timeout job"
-            )
-            set_edit_timeout(context, user_id, FIELD_EDIT_TIMEOUT)
 
         msg = await query.message.reply_text(
             f"Пришлите новое значение для поля **{field}**",
@@ -1534,7 +1579,7 @@ async def handle_enum_selection(
     }
     field = field_map[prefix]
 
-    if current_state in (COLLECTING_DATA, FILLING_MISSING_FIELDS):
+    if filling_context or current_state in (COLLECTING_DATA, FILLING_MISSING_FIELDS):
         participant_data = context.user_data.get("add_flow_data", {})
         participant_data, _ = update_single_field(participant_data, field, value)
         context.user_data["add_flow_data"] = participant_data
@@ -1543,8 +1588,9 @@ async def handle_enum_selection(
             context.user_data["parsed_participant"] = participant_data
             await show_confirmation(update, context, participant_data)
             context.user_data["current_state"] = CONFIRMING_DATA
+            context.user_data["filling_missing_field"] = False
             return CONFIRMING_DATA
-        await show_missing_field_prompt(update, context, participant_data)
+        await show_interactive_missing_field(update, context, participant_data)
         context.user_data["current_state"] = FILLING_MISSING_FIELDS
         return FILLING_MISSING_FIELDS
 
@@ -1609,6 +1655,32 @@ async def handle_field_edit_cancel(
 
     await query.message.reply_text("Данные участника не найдены. Начните заново с /add")
     cleanup_user_data_safe(context, user_id)
+    return ConversationHandler.END
+
+
+@smart_cleanup_on_error
+async def handle_recover_confirmation(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Return to the confirmation step after recovery."""
+    query = update.callback_query
+    await query.answer()
+    participant_data = context.user_data.get("parsed_participant")
+    if participant_data:
+        await show_confirmation(update, context, participant_data)
+        return CONFIRMING_DATA
+    await query.message.reply_text("Данные участника не найдены. Начните заново с /add")
+    return ConversationHandler.END
+
+
+@smart_cleanup_on_error
+async def handle_recover_input(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Resume input of missing fields after recovery."""
+    query = update.callback_query
+    await query.answer()
+    participant_data = context.user_data.get("add_flow_data")
+    if participant_data:
+        await show_interactive_missing_field(update, context, participant_data)
+        return FILLING_MISSING_FIELDS
+    await query.message.reply_text("Данные не найдены. Начните заново с /add")
     return ConversationHandler.END
 
 
@@ -1751,6 +1823,15 @@ def main():
             ],
             CONFIRMING_DUPLICATE: [
                 CallbackQueryHandler(handle_duplicate_callback, pattern="^dup_"),
+            ],
+            RECOVERING: [
+                CallbackQueryHandler(
+                    handle_recover_confirmation, pattern="^recover_confirmation$"
+                ),
+                CallbackQueryHandler(
+                    handle_recover_input, pattern="^recover_input$"
+                ),
+                CallbackQueryHandler(handle_add_callback, pattern="^main_add$")
             ],
         },
         fallbacks=[
