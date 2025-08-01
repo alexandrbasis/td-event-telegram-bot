@@ -1433,6 +1433,34 @@ async def handle_continue_editing_callback(
 
 
 @smart_cleanup_on_error
+async def handle_field_edit_cancel(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> int:
+    """Возвращает пользователя к подтверждению данных без сброса всего диалога."""
+    query = update.callback_query
+    user_id = update.effective_user.id
+
+    logger.info(f"User {user_id} cancelled field editing")
+    await query.answer()
+
+    context.user_data.pop("field_to_edit", None)
+    context.user_data.pop("edit_timeout", None)
+
+    if job := context.user_data.pop("clear_edit_job", None):
+        job.schedule_removal()
+
+    participant_data = context.user_data.get("parsed_participant", {})
+    if participant_data:
+        await show_confirmation(update, context, participant_data)
+        await query.edit_message_text("Редактирование отменено. Выберите другое поле для изменения или сохраните данные.", reply_markup=get_edit_keyboard(participant_data))
+        return CONFIRMING_DATA
+
+    await query.message.reply_text("Данные участника не найдены. Начните заново с /add")
+    cleanup_user_data_safe(context, user_id)
+    return ConversationHandler.END
+
+
+@smart_cleanup_on_error
 async def handle_duplicate_callback(
     update: Update, context: ContextTypes.DEFAULT_TYPE
 ) -> int:
@@ -1546,6 +1574,9 @@ def main():
                 CallbackQueryHandler(
                     handle_enum_selection,
                     pattern="^manual_input_.+$",
+                ),
+                CallbackQueryHandler(
+                    handle_field_edit_cancel, pattern="^field_edit_cancel$"
                 ),
                 MessageHandler(
                     filters.TEXT & ~filters.COMMAND, handle_participant_confirmation
