@@ -33,6 +33,10 @@ from services.participant_service import (
     update_single_field,
     get_edit_keyboard,
     FIELD_LABELS,
+    get_gender_selection_keyboard,
+    get_role_selection_keyboard,
+    get_size_selection_keyboard,
+    get_department_selection_keyboard,
 )
 from utils.validators import validate_participant_data
 from utils.exceptions import (
@@ -342,7 +346,8 @@ async def show_confirmation(
                     f"Button [{i}][{j}]: text='{button.text}', callback_data='{button.callback_data}'"
                 )
 
-    msg = await update.message.reply_text(
+    message = update.effective_message
+    msg = await message.reply_text(
         confirmation_text,
         parse_mode="Markdown",
         reply_markup=keyboard,
@@ -1274,12 +1279,77 @@ async def edit_field_callback(
     )
     context.user_data["clear_edit_job"] = timeout_job
 
-    msg = await query.message.reply_text(
-        f"Пришлите новое значение для поля **{field_to_edit}**",
-        parse_mode="Markdown",
-    )
+    keyboard_map = {
+        "Gender": get_gender_selection_keyboard,
+        "Role": get_role_selection_keyboard,
+        "Size": get_size_selection_keyboard,
+        "Department": get_department_selection_keyboard,
+    }
+
+    if field_to_edit in keyboard_map:
+        kb = keyboard_map[field_to_edit]()
+        msg = await query.message.reply_text("Выберите значение:", reply_markup=kb)
+    else:
+        msg = await query.message.reply_text(
+            f"Пришлите новое значение для поля **{field_to_edit}**",
+            parse_mode="Markdown",
+        )
     _add_message_to_cleanup(context, msg.message_id)
 
+    return CONFIRMING_DATA
+
+
+@smart_cleanup_on_error
+async def handle_enum_selection(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> int:
+    """Обрабатывает выбор значения из enum-клавиатуры или переход к ручному вводу."""
+    query = update.callback_query
+    await query.answer()
+
+    data = query.data
+    user_id = update.effective_user.id
+
+    if data.startswith("manual_input_"):
+        field = data.split("_", 1)[1]
+        context.user_data["field_to_edit"] = field
+
+        if job := context.user_data.get("clear_edit_job"):
+            job.schedule_removal()
+        timeout_job = context.job_queue.run_once(
+            clear_field_to_edit, FIELD_EDIT_TIMEOUT, data=user_id
+        )
+        context.user_data["clear_edit_job"] = timeout_job
+
+        msg = await query.message.reply_text(
+            f"Пришлите новое значение для поля **{field}**",
+            parse_mode="Markdown",
+        )
+        _add_message_to_cleanup(context, msg.message_id)
+        return CONFIRMING_DATA
+
+    match = re.match(r"^(gender|role|size|dept)_(.+)$", data)
+    if not match:
+        return CONFIRMING_DATA
+
+    prefix, value = match.groups()
+    field_map = {
+        "gender": "Gender",
+        "role": "Role",
+        "size": "Size",
+        "dept": "Department",
+    }
+    field = field_map[prefix]
+
+    participant_data = context.user_data.get("parsed_participant", {})
+    updated_data, _changes = update_single_field(participant_data, field, value)
+    context.user_data["parsed_participant"] = updated_data
+    context.user_data.pop("field_to_edit", None)
+
+    if job := context.user_data.pop("clear_edit_job", None):
+        job.schedule_removal()
+
+    await show_confirmation(update, context, updated_data)
     return CONFIRMING_DATA
 
 
@@ -1410,6 +1480,14 @@ def main():
             CONFIRMING_DATA: [
                 CallbackQueryHandler(
                     handle_save_confirmation, pattern="^confirm_save$"
+                ),
+                CallbackQueryHandler(
+                    handle_enum_selection,
+                    pattern="^(gender|role|size|dept)_.+$",
+                ),
+                CallbackQueryHandler(
+                    handle_enum_selection,
+                    pattern="^manual_input_.+$",
                 ),
                 MessageHandler(
                     filters.TEXT & ~filters.COMMAND, handle_participant_confirmation
