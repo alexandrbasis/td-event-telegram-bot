@@ -27,6 +27,7 @@ from parsers.participant_parser import (
     is_template_format,
     parse_template_format,
     parse_unstructured_text,
+    normalize_field_value,
 )
 from services.participant_service import (
     merge_participant_data,
@@ -48,7 +49,12 @@ from utils.exceptions import (
     DatabaseError,
 )
 from messages import MESSAGES
-from states import CONFIRMING_DATA, CONFIRMING_DUPLICATE, COLLECTING_DATA
+from states import (
+    CONFIRMING_DATA,
+    CONFIRMING_DUPLICATE,
+    COLLECTING_DATA,
+    FILLING_MISSING_FIELDS,
+)
 
 
 def smart_cleanup_on_error(func):
@@ -349,6 +355,14 @@ OPTIONAL_FIELDS = [
     "Department",
 ]
 
+# Field to keyboard mapping for interactive prompts during /add flow
+FIELD_KEYBOARDS = {
+    "Gender": get_gender_selection_keyboard,
+    "Size": get_size_selection_keyboard,
+    "Role": get_role_selection_keyboard,
+    "Department": get_department_selection_keyboard,
+}
+
 
 # Функция проверки прав пользователя
 def get_user_role(user_id):
@@ -491,6 +505,73 @@ def get_missing_fields(participant_data: Dict) -> List[str]:
     return missing
 
 
+def safe_merge_participant_data(existing: Dict, updates: Dict) -> Dict:
+    """Merge updates without overwriting already filled fields."""
+    for key, value in updates.items():
+        if not existing.get(key) and value:
+            existing[key] = value
+    return existing
+
+
+def get_missing_field_keys(participant_data: Dict) -> List[str]:
+    """Return field names that are still empty."""
+    missing = []
+    for field in REQUIRED_FIELDS:
+        if not participant_data.get(field):
+            missing.append(field)
+    if participant_data.get("Role") == "TEAM" and not participant_data.get(
+        "Department"
+    ):
+        missing.append("Department")
+    return missing
+
+
+def get_next_missing_field(participant_data: Dict) -> Optional[str]:
+    """Return the next missing field or ``None`` if all filled."""
+    missing = get_missing_field_keys(participant_data)
+    return missing[0] if missing else None
+
+
+async def show_missing_field_prompt(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    participant_data: Dict,
+) -> None:
+    """Prompt user to fill the next missing field with keyboard if available."""
+
+    queue = context.user_data.get("missing_fields_queue")
+    if not queue:
+        queue = get_missing_field_keys(participant_data)
+        context.user_data["missing_fields_queue"] = queue
+
+    if not queue:
+        return
+
+    field = queue[0]
+    context.user_data["waiting_for_field"] = field
+
+    cancel_markup = InlineKeyboardMarkup(
+        [[InlineKeyboardButton("❌ Отмена", callback_data="main_cancel")]]
+    )
+
+    message = update.effective_message
+    keyboard_func = FIELD_KEYBOARDS.get(field)
+    if keyboard_func:
+        kb = keyboard_func()
+        msg = await message.reply_text(
+            f"Выберите значение для поля **{FIELD_LABELS.get(field, field)}**",
+            parse_mode="Markdown",
+            reply_markup=kb,
+        )
+    else:
+        msg = await message.reply_text(
+            f"Пришлите значение для поля **{FIELD_LABELS.get(field, field)}**",
+            parse_mode="Markdown",
+            reply_markup=cancel_markup,
+        )
+    _add_message_to_cleanup(context, msg.message_id)
+
+
 def format_status_message(participant_data: Dict) -> str:
     """Creates a status message with filled data and missing fields."""
     message = "📝 **Процесс добавления:**\n\n"
@@ -620,6 +701,7 @@ async def handle_add_callback(
     _add_message_to_cleanup(context, msg1.message_id)
     _add_message_to_cleanup(context, msg2.message_id)
     _add_message_to_cleanup(context, query.message.message_id)
+    context.user_data["current_state"] = COLLECTING_DATA
     return COLLECTING_DATA
 
 
@@ -776,6 +858,7 @@ async def add_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
     _add_message_to_cleanup(context, msg1.message_id)
     _add_message_to_cleanup(context, msg2.message_id)
     _add_message_to_cleanup(context, update.message.message_id)
+    context.user_data["current_state"] = COLLECTING_DATA
     return COLLECTING_DATA
 
 
@@ -790,12 +873,25 @@ async def handle_partial_data(
     _add_message_to_cleanup(context, update.message.message_id)
     participant_data = context.user_data.get("add_flow_data", {})
 
+    waiting_field = context.user_data.pop("waiting_for_field", None)
+    if waiting_field:
+        normalized = normalize_field_value(waiting_field, text)
+        participant_data[waiting_field] = normalized or text
+        context.user_data["add_flow_data"] = participant_data
+        missing_fields = get_missing_field_keys(participant_data)
+        if not missing_fields:
+            context.user_data["parsed_participant"] = participant_data
+            await show_confirmation(update, context, participant_data)
+            context.user_data["current_state"] = CONFIRMING_DATA
+            return CONFIRMING_DATA
+        await show_missing_field_prompt(update, context, participant_data)
+        context.user_data["current_state"] = FILLING_MISSING_FIELDS
+        return FILLING_MISSING_FIELDS
+
     # 1. Check if user pasted a full template (highest priority)
     if is_template_format(text):
         parsed_update = parse_template_format(text)
-        for key, value in parsed_update.items():
-            if value:
-                participant_data[key] = value
+        participant_data = safe_merge_participant_data(participant_data, parsed_update)
     else:
         # 2. Try splitting by newline or comma to detect multiple fields
         chunks = []
@@ -816,9 +912,9 @@ async def handle_partial_data(
             else:
                 parsed_chunk = parse_participant_data(chunk, is_update=False)
 
-            for key, value in parsed_chunk.items():
-                if value:
-                    participant_data[key] = value
+            participant_data = safe_merge_participant_data(
+                participant_data, parsed_chunk
+            )
 
     # --- NAME DUPLICATE CHECK BLOCK ---
     newly_identified_name = participant_data.get("FullNameRU")
@@ -854,16 +950,40 @@ async def handle_partial_data(
         context.user_data["current_state"] = CONFIRMING_DATA
         return CONFIRMING_DATA
     else:
-        status_message = format_status_message(participant_data)
-        cancel_markup = InlineKeyboardMarkup(
-            [[InlineKeyboardButton("❌ Отмена", callback_data="main_cancel")]]
-        )
-        msg = await update.message.reply_text(
-            status_message, parse_mode="Markdown", reply_markup=cancel_markup
-        )
-        _add_message_to_cleanup(context, msg.message_id)
-        context.user_data["current_state"] = COLLECTING_DATA
-        return COLLECTING_DATA
+        context.user_data["missing_fields_queue"] = missing_fields
+        await show_missing_field_prompt(update, context, participant_data)
+        context.user_data["current_state"] = FILLING_MISSING_FIELDS
+        return FILLING_MISSING_FIELDS
+
+
+@require_role("coordinator")
+@smart_cleanup_on_error
+async def handle_missing_field_input(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> int:
+    """Handles user input during step-by-step field collection."""
+    text = update.message.text.strip()
+    _add_message_to_cleanup(context, update.message.message_id)
+
+    participant_data = context.user_data.get("add_flow_data", {})
+    waiting_field = context.user_data.pop("waiting_for_field", None)
+
+    if waiting_field:
+        normalized = normalize_field_value(waiting_field, text)
+        participant_data[waiting_field] = normalized or text
+        context.user_data["add_flow_data"] = participant_data
+
+    missing_fields = get_missing_field_keys(participant_data)
+    if not missing_fields:
+        context.user_data["parsed_participant"] = participant_data
+        await show_confirmation(update, context, participant_data)
+        context.user_data["current_state"] = CONFIRMING_DATA
+        return CONFIRMING_DATA
+
+    context.user_data["missing_fields_queue"] = missing_fields
+    await show_missing_field_prompt(update, context, participant_data)
+    context.user_data["current_state"] = FILLING_MISSING_FIELDS
+    return FILLING_MISSING_FIELDS
 
 
 # Команда /edit
@@ -1361,9 +1481,24 @@ async def handle_enum_selection(
 
     data = query.data
     user_id = update.effective_user.id
+    current_state = context.user_data.get("current_state", CONFIRMING_DATA)
 
     if data.startswith("manual_input_"):
         field = data.split("_", 1)[1]
+        if current_state in (COLLECTING_DATA, FILLING_MISSING_FIELDS):
+            context.user_data["waiting_for_field"] = field
+            cancel_markup = InlineKeyboardMarkup(
+                [[InlineKeyboardButton("❌ Отмена", callback_data="main_cancel")]]
+            )
+            msg = await query.message.reply_text(
+                f"Пришлите значение для поля **{FIELD_LABELS.get(field, field)}**",
+                parse_mode="Markdown",
+                reply_markup=cancel_markup,
+            )
+            _add_message_to_cleanup(context, msg.message_id)
+            context.user_data["current_state"] = FILLING_MISSING_FIELDS
+            return FILLING_MISSING_FIELDS
+
         context.user_data["field_to_edit"] = field
 
         if job := context.user_data.get("clear_edit_job"):
@@ -1388,7 +1523,7 @@ async def handle_enum_selection(
 
     match = re.match(r"^(gender|role|size|dept)_(.+)$", data)
     if not match:
-        return CONFIRMING_DATA
+        return current_state
 
     prefix, value = match.groups()
     field_map = {
@@ -1398,6 +1533,20 @@ async def handle_enum_selection(
         "dept": "Department",
     }
     field = field_map[prefix]
+
+    if current_state in (COLLECTING_DATA, FILLING_MISSING_FIELDS):
+        participant_data = context.user_data.get("add_flow_data", {})
+        participant_data, _ = update_single_field(participant_data, field, value)
+        context.user_data["add_flow_data"] = participant_data
+        next_field = get_next_missing_field(participant_data)
+        if next_field is None:
+            context.user_data["parsed_participant"] = participant_data
+            await show_confirmation(update, context, participant_data)
+            context.user_data["current_state"] = CONFIRMING_DATA
+            return CONFIRMING_DATA
+        await show_missing_field_prompt(update, context, participant_data)
+        context.user_data["current_state"] = FILLING_MISSING_FIELDS
+        return FILLING_MISSING_FIELDS
 
     participant_data = context.user_data.get("parsed_participant", {})
     updated_data, _changes = update_single_field(participant_data, field, value)
@@ -1452,7 +1601,10 @@ async def handle_field_edit_cancel(
     participant_data = context.user_data.get("parsed_participant", {})
     if participant_data:
         await show_confirmation(update, context, participant_data)
-        await query.edit_message_text("Редактирование отменено. Выберите другое поле для изменения или сохраните данные.", reply_markup=get_edit_keyboard(participant_data))
+        await query.edit_message_text(
+            "Редактирование отменено. Выберите другое поле для изменения или сохраните данные.",
+            reply_markup=get_edit_keyboard(participant_data),
+        )
         return CONFIRMING_DATA
 
     await query.message.reply_text("Данные участника не найдены. Начните заново с /add")
@@ -1562,6 +1714,17 @@ def main():
         states={
             COLLECTING_DATA: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, handle_partial_data)
+            ],
+            FILLING_MISSING_FIELDS: [
+                MessageHandler(
+                    filters.TEXT & ~filters.COMMAND, handle_missing_field_input
+                ),
+                CallbackQueryHandler(
+                    handle_enum_selection, pattern="^(gender|role|size|dept)_.+$"
+                ),
+                CallbackQueryHandler(
+                    handle_enum_selection, pattern="^manual_input_.+$"
+                ),
             ],
             CONFIRMING_DATA: [
                 CallbackQueryHandler(
