@@ -63,6 +63,5 @@ class EnumSelectionContextTestCase(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(state, CONFIRMING_DATA)
         self.assertFalse(context.user_data.get("filling_missing_field", True))
 
-
 if __name__ == "__main__":
     unittest.main()

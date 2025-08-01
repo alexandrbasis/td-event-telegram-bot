@@ -46,7 +46,7 @@ class EditKeyboardTestCase(unittest.TestCase):
         datas = [b.callback_data for row in kb.inline_keyboard for b in row]
         self.assertIn("role_CANDIDATE", datas)
         self.assertIn("role_TEAM", datas)
-        self.assertIn("manual_input_Role", datas)
+        self.assertNotIn("manual_input_Role", datas)
         self.assertIn("field_edit_cancel", datas)
 
     def test_size_selection_keyboard(self):
@@ -61,7 +61,7 @@ class EditKeyboardTestCase(unittest.TestCase):
         datas = [b.callback_data for row in kb.inline_keyboard for b in row]
         self.assertIn("dept_ROE", datas)
         self.assertIn("dept_Kitchen", datas)
-        self.assertIn("manual_input_Department", datas)
+        self.assertNotIn("manual_input_Department", datas)
         self.assertIn("field_edit_cancel", datas)
 
     def test_required_keyboards_no_manual_input(self):
@@ -80,7 +80,6 @@ class EditKeyboardTestCase(unittest.TestCase):
         kb_gender = get_gender_selection_keyboard_required()
         datas_gender = [b.callback_data for row in kb_gender.inline_keyboard for b in row]
         self.assertNotIn("manual_input_Gender", datas_gender)
-
 
 if __name__ == "__main__":
     unittest.main()

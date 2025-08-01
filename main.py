@@ -1440,16 +1440,14 @@ async def handle_participant_confirmation(
                 participant_data, field_to_edit, text
             )
         except ValidationError:
+            field_label = FIELD_LABELS.get(field_to_edit, field_to_edit)
             error_text = MESSAGES["VALIDATION_ERRORS"].get(
-                field_to_edit, f"Недопустимое значение для поля {field_to_edit}"
+                field_to_edit, f"Недопустимое значение для поля {field_label}"
             )
-            await update.message.reply_text(f"❌ {error_text}")
-
-            timeout_job = safe_create_timeout_job(
-                context, clear_field_to_edit, FIELD_EDIT_TIMEOUT, user_id
+            await update.message.reply_text(
+                f"❌ {error_text}\n\n🔄 Попробуйте еще раз или нажмите /cancel для отмены."
             )
-            if timeout_job:
-                context.user_data["clear_edit_job"] = timeout_job
+            # НЕ очищаем field_to_edit - пользователь остается в режиме редактирования
             return CONFIRMING_DATA
 
         context.user_data["parsed_participant"] = updated_data
@@ -1529,42 +1527,6 @@ async def handle_enum_selection(
     current_state = context.user_data.get("current_state", CONFIRMING_DATA)
     filling_context = context.user_data.get("filling_missing_field", False)
 
-    if data.startswith("manual_input_"):
-        field = data.split("_", 1)[1]
-        if (
-            current_state in (COLLECTING_DATA, FILLING_MISSING_FIELDS)
-            or filling_context
-        ):
-            context.user_data["waiting_for_field"] = field
-            cancel_markup = InlineKeyboardMarkup(
-                [[InlineKeyboardButton("❌ Отмена", callback_data="main_cancel")]]
-            )
-            msg = await query.message.reply_text(
-                f"Пришлите значение для поля **{FIELD_LABELS.get(field, field)}**",
-                parse_mode="Markdown",
-                reply_markup=cancel_markup,
-            )
-            _add_message_to_cleanup(context, msg.message_id)
-            context.user_data["current_state"] = FILLING_MISSING_FIELDS
-            context.user_data["filling_missing_field"] = True
-            return FILLING_MISSING_FIELDS
-
-        context.user_data["field_to_edit"] = field
-
-        if job := context.user_data.get("clear_edit_job"):
-            job.schedule_removal()
-        timeout_job = safe_create_timeout_job(
-            context, clear_field_to_edit, FIELD_EDIT_TIMEOUT, user_id
-        )
-        if timeout_job:
-            context.user_data["clear_edit_job"] = timeout_job
-
-        msg = await query.message.reply_text(
-            f"Пришлите новое значение для поля **{field}**",
-            parse_mode="Markdown",
-        )
-        _add_message_to_cleanup(context, msg.message_id)
-        return CONFIRMING_DATA
 
     match = re.match(r"^(gender|role|size|dept)_(.+)$", data)
     if not match:
@@ -1794,9 +1756,6 @@ def main():
                 CallbackQueryHandler(
                     handle_enum_selection, pattern="^(gender|role|size|dept)_.+$"
                 ),
-                CallbackQueryHandler(
-                    handle_enum_selection, pattern="^manual_input_.+$"
-                ),
             ],
             CONFIRMING_DATA: [
                 CallbackQueryHandler(
@@ -1805,10 +1764,6 @@ def main():
                 CallbackQueryHandler(
                     handle_enum_selection,
                     pattern="^(gender|role|size|dept)_.+$",
-                ),
-                CallbackQueryHandler(
-                    handle_enum_selection,
-                    pattern="^manual_input_.+$",
                 ),
                 CallbackQueryHandler(
                     handle_field_edit_cancel, pattern="^field_edit_cancel$"

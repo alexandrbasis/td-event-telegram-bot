@@ -124,7 +124,6 @@ def get_role_selection_keyboard() -> InlineKeyboardMarkup:
     buttons = [
         [InlineKeyboardButton("\U0001f464 Кандидат", callback_data="role_CANDIDATE")],
         [InlineKeyboardButton("\U0001f465 Команда", callback_data="role_TEAM")],
-        [InlineKeyboardButton("✏️ Ввести вручную", callback_data="manual_input_Role")],
         [InlineKeyboardButton("↩️ Назад", callback_data="field_edit_cancel")],
     ]
     return InlineKeyboardMarkup(buttons)
@@ -226,13 +225,7 @@ def get_department_selection_keyboard() -> InlineKeyboardMarkup:
             row.append(InlineKeyboardButton(display_name, callback_data=f"dept_{key}"))
         buttons.append(row)
 
-    buttons.append(
-        [
-            InlineKeyboardButton(
-                "✏️ Ввести вручную", callback_data="manual_input_Department"
-            )
-        ]
-    )
+    # Кнопка ручного ввода удалена
     buttons.append([InlineKeyboardButton("↩️ Назад", callback_data="field_edit_cancel")])
     return InlineKeyboardMarkup(buttons)
 
