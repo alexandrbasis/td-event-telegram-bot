@@ -45,7 +45,5 @@ class RecoverTechnicalErrorTestCase(unittest.IsolatedAsyncioTestCase):
         self.assertIn("recover_confirmation", datas)
         self.assertIn("recover_input", datas)
         self.assertIn("main_add", datas)
-
-
 if __name__ == "__main__":
     unittest.main()
