@@ -1772,13 +1772,18 @@ async def edit_field_callback(
         "Department": get_department_selection_keyboard,
     }
 
+    cancel_markup = InlineKeyboardMarkup(
+        [[InlineKeyboardButton("↩️ Назад", callback_data="field_edit_cancel")]]
+    )
+
     if field_to_edit in keyboard_map:
         kb = keyboard_map[field_to_edit]()
         msg = await query.message.reply_text("Выберите значение:", reply_markup=kb)
     else:
         msg = await query.message.reply_text(
-            f"Пришлите новое значение для поля **{field_to_edit}**",
+            f"Пришлите новое значение для поля **{FIELD_LABELS.get(field_to_edit, field_to_edit)}**",
             parse_mode="Markdown",
+            reply_markup=cancel_markup,
         )
     _add_message_to_cleanup(context, msg.message_id)
 
