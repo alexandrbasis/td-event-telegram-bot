@@ -4,6 +4,9 @@ import re
 from typing import List, Dict, Optional
 from dataclasses import asdict
 import time
+import traceback
+from datetime import datetime
+from collections import defaultdict
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from functools import wraps
 from telegram.ext import (
@@ -19,6 +22,7 @@ from config import BOT_TOKEN, BOT_USERNAME, COORDINATOR_IDS, VIEWER_IDS
 from utils.decorators import require_role
 from utils.cache import load_reference_data
 from utils.timeouts import set_edit_timeout, clear_expired_edit
+from utils.user_logger import UserActionLogger
 from database import init_database
 from repositories.participant_repository import SqliteParticipantRepository
 from services.participant_service import ParticipantService
@@ -62,6 +66,8 @@ from states import (
     RECOVERING,
 )
 
+BOT_VERSION = "0.1"
+
 
 def smart_cleanup_on_error(func):
     """
@@ -78,14 +84,27 @@ def smart_cleanup_on_error(func):
         update: Update, context: ContextTypes.DEFAULT_TYPE, *args, **kwargs
     ):
         user_id = update.effective_user.id if update.effective_user else "unknown"
+        timestamp = datetime.utcnow().isoformat()
 
         try:
             return await func(update, context, *args, **kwargs)
 
         except ValidationError as e:
             # Ошибки валидации - остаёмся в текущем состоянии
-            logger.warning(
-                f"Validation error for user {user_id} in {func.__name__}: {e}"
+            logging.getLogger("errors").warning(
+                f"Validation error for user {user_id} in {func.__name__}: {e}",
+                exc_info=True,
+            )
+            user_logger.log_error_with_context(
+                user_id,
+                e,
+                {
+                    "user_data": dict(context.user_data),
+                    "last_actions": context.user_data.get("action_history", []),
+                    "timestamp": timestamp,
+                    "bot_version": BOT_VERSION,
+                },
+                func.__name__,
             )
             try:
                 if update.message:
@@ -108,8 +127,20 @@ def smart_cleanup_on_error(func):
 
         except ParticipantNotFoundError as e:
             # Участник не найден - остаёмся в состоянии
-            logger.warning(
-                f"Participant not found for user {user_id} in {func.__name__}: {e}"
+            logging.getLogger("errors").warning(
+                f"Participant not found for user {user_id} in {func.__name__}: {e}",
+                exc_info=True,
+            )
+            user_logger.log_error_with_context(
+                user_id,
+                e,
+                {
+                    "user_data": dict(context.user_data),
+                    "last_actions": context.user_data.get("action_history", []),
+                    "timestamp": timestamp,
+                    "bot_version": BOT_VERSION,
+                },
+                func.__name__,
             )
             try:
                 if update.message:
@@ -130,14 +161,39 @@ def smart_cleanup_on_error(func):
 
         except AttributeError as e:
             if "job_queue" in str(e) or "run_once" in str(e):
-                logger.error(f"JobQueue error for user {user_id}: {e}")
+                logging.getLogger("errors").error(
+                    f"JobQueue error for user {user_id}: {e}", exc_info=True
+                )
+                user_logger.log_error_with_context(
+                    user_id,
+                    e,
+                    {
+                        "user_data": dict(context.user_data),
+                        "last_actions": context.user_data.get("action_history", []),
+                        "timestamp": timestamp,
+                        "bot_version": BOT_VERSION,
+                    },
+                    func.__name__,
+                )
                 return await recover_from_technical_error(update, context)
             raise
 
         except (DatabaseError, BotException) as e:
             # Серьёзные ошибки - очищаем состояние
-            logger.error(
-                f"Critical error for user {user_id} in {func.__name__}: {type(e).__name__}: {e}"
+            logging.getLogger("errors").error(
+                f"Critical error for user {user_id} in {func.__name__}: {type(e).__name__}: {e}",
+                exc_info=True,
+            )
+            user_logger.log_error_with_context(
+                user_id,
+                e,
+                {
+                    "user_data": dict(context.user_data),
+                    "last_actions": context.user_data.get("action_history", []),
+                    "timestamp": timestamp,
+                    "bot_version": BOT_VERSION,
+                },
+                func.__name__,
             )
             cleanup_user_data_safe(
                 context, user_id if isinstance(user_id, int) else None
@@ -159,7 +215,7 @@ def smart_cleanup_on_error(func):
                         parse_mode="Markdown",
                     )
             except Exception as send_error:
-                logger.error(
+                logging.getLogger("errors").error(
                     f"Failed to send critical error message to user {user_id}: {send_error}"
                 )
 
@@ -167,9 +223,20 @@ def smart_cleanup_on_error(func):
 
         except Exception as e:
             # Неизвестные ошибки - очищаем состояние для безопасности
-            logger.error(
+            logging.getLogger("errors").error(
                 f"Unexpected error for user {user_id} in {func.__name__}: {type(e).__name__}: {e}",
                 exc_info=True,
+            )
+            user_logger.log_error_with_context(
+                user_id,
+                e,
+                {
+                    "user_data": dict(context.user_data),
+                    "last_actions": context.user_data.get("action_history", []),
+                    "timestamp": timestamp,
+                    "bot_version": BOT_VERSION,
+                },
+                func.__name__,
             )
             cleanup_user_data_safe(
                 context, user_id if isinstance(user_id, int) else None
@@ -191,7 +258,7 @@ def smart_cleanup_on_error(func):
                         parse_mode="Markdown",
                     )
             except Exception as send_error:
-                logger.error(
+                logging.getLogger("errors").error(
                     f"Failed to send unexpected error message to user {user_id}: {send_error}"
                 )
 
@@ -398,26 +465,123 @@ async def recover_from_technical_error(
 
 # Настройка логирования
 LOG_FORMAT = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-handler = RotatingFileHandler("bot.log", maxBytes=10 * 1024 * 1024, backupCount=5)
-handler.setFormatter(logging.Formatter(LOG_FORMAT))
-
-# Отдельный лог для SQL-запросов
-sql_handler = RotatingFileHandler("sql.log", maxBytes=10 * 1024 * 1024, backupCount=5)
-sql_handler.setFormatter(logging.Formatter(LOG_FORMAT))
-sql_logger = logging.getLogger("sql")
-sql_logger.addHandler(sql_handler)
 
 
-def setup_logging():
-    """Configure logging levels for production."""
-    logging.basicConfig(level=logging.INFO, handlers=[handler], format=LOG_FORMAT)
-    # logging.getLogger(__name__).setLevel(logging.DEBUG)
+def setup_logging() -> None:
+    """Configure logging and separate log files."""
+    bot_handler = RotatingFileHandler(
+        "bot.log", maxBytes=10 * 1024 * 1024, backupCount=5
+    )
+    bot_handler.setFormatter(logging.Formatter(LOG_FORMAT))
+
+    error_handler = RotatingFileHandler(
+        "errors.log", maxBytes=5 * 1024 * 1024, backupCount=5
+    )
+    error_handler.setFormatter(logging.Formatter(LOG_FORMAT))
+
+    participant_handler = RotatingFileHandler(
+        "participant_changes.log", maxBytes=5 * 1024 * 1024, backupCount=5
+    )
+    participant_handler.setFormatter(logging.Formatter(LOG_FORMAT))
+
+    performance_handler = RotatingFileHandler(
+        "performance.log", maxBytes=5 * 1024 * 1024, backupCount=5
+    )
+    performance_handler.setFormatter(logging.Formatter(LOG_FORMAT))
+
+    sql_handler = RotatingFileHandler(
+        "sql.log", maxBytes=10 * 1024 * 1024, backupCount=5
+    )
+    sql_handler.setFormatter(logging.Formatter(LOG_FORMAT))
+
+    logging.basicConfig(level=logging.INFO, handlers=[bot_handler], format=LOG_FORMAT)
+
+    logging.getLogger("errors").addHandler(error_handler)
+    logging.getLogger("errors").setLevel(logging.ERROR)
+
+    logging.getLogger("participant_changes").addHandler(participant_handler)
+    logging.getLogger("participant_changes").setLevel(logging.INFO)
+
+    logging.getLogger("performance").addHandler(performance_handler)
+    logging.getLogger("performance").setLevel(logging.INFO)
+
+    sql_logger = logging.getLogger("sql")
+    sql_logger.addHandler(sql_handler)
     sql_logger.setLevel(logging.WARNING)
 
 
 setup_logging()
 
+user_logger = UserActionLogger()
 logger = logging.getLogger(__name__)
+ERROR_STATS: Dict[str, int] = defaultdict(int)
+
+
+# helper to keep last user actions
+def _record_action(context: ContextTypes.DEFAULT_TYPE, action: str) -> None:
+    history = context.user_data.setdefault("action_history", [])
+    history.append({"action": action, "timestamp": time.time()})
+    if len(history) > 5:
+        context.user_data["action_history"] = history[-5:]
+
+
+def _log_session_end(context: ContextTypes.DEFAULT_TYPE, user_id: int) -> None:
+    start = context.user_data.pop("session_start", None)
+    if start:
+        duration = (datetime.utcnow() - start).total_seconds()
+        user_logger.log_user_action(user_id, "session_end", {"duration": duration})
+
+
+def log_state_transitions(func):
+    """Decorator to log state transitions for conversation handlers."""
+
+    @wraps(func)
+    async def wrapper(
+        update: Update, context: ContextTypes.DEFAULT_TYPE, *args, **kwargs
+    ):
+        user_id = update.effective_user.id if update.effective_user else "unknown"
+        from_state = str(context.user_data.get("current_state"))
+        start = time.time()
+        data = ""
+        msg = getattr(update, "message", None)
+        if msg and getattr(msg, "text", None):
+            data = msg.text
+        else:
+            cq = getattr(update, "callback_query", None)
+            if cq and getattr(cq, "data", None):
+                data = cq.data
+        try:
+            next_state = await func(update, context, *args, **kwargs)
+            duration = time.time() - start
+            user_logger.log_state_transition(
+                user_id,
+                from_state,
+                str(next_state),
+                {"input": data, "duration": duration},
+            )
+            _record_action(context, f"state:{func.__name__}")
+            return next_state
+        except Exception as e:
+            user_logger.log_error_with_context(
+                user_id,
+                e,
+                {
+                    "user_data": dict(context.user_data),
+                    "last_actions": context.user_data.get("action_history", []),
+                    "input": data,
+                    "timestamp": datetime.utcnow().isoformat(),
+                },
+                func.__name__,
+            )
+            raise
+
+    return wrapper
+
+
+async def log_all_updates(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Middleware to log every incoming update."""
+    logger.info("Incoming update: %s", update.to_dict())
+
 
 # Timeout in seconds to wait for user input when editing a specific field
 FIELD_EDIT_TIMEOUT = 300
@@ -738,9 +902,16 @@ async def _show_main_menu(
 @require_role("viewer")
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Entry point that shows the main menu."""
-    logger.info("User %s started /start", update.effective_user.id)
+    user_id = update.effective_user.id
+    _log_session_end(context, user_id)
+    context.user_data["session_start"] = datetime.utcnow()
+    user_logger.log_user_action(user_id, "command_start", {"command": "/start"})
+    _record_action(context, "/start:start")
+
+    logger.info("User %s started /start", user_id)
     await _cleanup_messages(context, update.effective_chat.id)
     await _show_main_menu(update, context)
+    user_logger.log_user_action(user_id, "command_end", {"command": "/start"})
 
 
 @require_role("coordinator")
@@ -794,12 +965,15 @@ async def handle_main_menu_callback(update: Update, context: ContextTypes.DEFAUL
     query = update.callback_query
     await query.answer()
     data = query.data
+    user_id = update.effective_user.id
+    user_logger.log_user_action(user_id, "menu_action", {"action": data})
 
     await query.edit_message_reply_markup(reply_markup=None)
 
     if data == "main_cancel":
+        _log_session_end(context, user_id)
         await _cleanup_messages(context, update.effective_chat.id)
-        cleanup_user_data_safe(context, update.effective_user.id)
+        cleanup_user_data_safe(context, user_id)
         await _show_main_menu(update, context, is_return=True)
         return
 
@@ -873,6 +1047,8 @@ async def handle_main_menu_callback(update: Update, context: ContextTypes.DEFAUL
 @require_role("viewer")
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
+    user_logger.log_user_action(user_id, "command_start", {"command": "/help"})
+    _record_action(context, "/help:start")
     role = get_user_role(user_id)
     logger.info("User %s requested help", user_id)
 
@@ -899,6 +1075,7 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """
 
     await _send_response_with_menu_button(update, help_text)
+    user_logger.log_user_action(user_id, "command_end", {"command": "/help"})
 
 
 # Команда /add
@@ -907,7 +1084,8 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def add_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Starts the /add flow and initializes the session."""
     user_id = update.effective_user.id
-    logger.info("User %s started add participant", user_id)
+    user_logger.log_user_action(user_id, "command_start", {"command": "/add"})
+    _record_action(context, "/add:start")
 
     context.user_data["add_flow_data"] = {
         "FullNameRU": None,
@@ -942,11 +1120,13 @@ async def add_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
     _add_message_to_cleanup(context, msg2.message_id)
     _add_message_to_cleanup(context, update.message.message_id)
     context.user_data["current_state"] = COLLECTING_DATA
+    user_logger.log_state_transition(user_id, "START", str(COLLECTING_DATA), {})
     return COLLECTING_DATA
 
 
 @require_role("coordinator")
 @smart_cleanup_on_error
+@log_state_transitions
 async def handle_partial_data(
     update: Update, context: ContextTypes.DEFAULT_TYPE
 ) -> int:
@@ -1003,7 +1183,7 @@ async def handle_partial_data(
     newly_identified_name = participant_data.get("FullNameRU")
     if newly_identified_name and not context.user_data.get("participant_id"):
         existing_participant = participant_service.check_duplicate(
-            newly_identified_name
+            newly_identified_name, user_id=user_id
         )
         if existing_participant:
             context.user_data["participant_id"] = existing_participant.id
@@ -1040,6 +1220,7 @@ async def handle_partial_data(
 
 @require_role("coordinator")
 @smart_cleanup_on_error
+@log_state_transitions
 async def handle_missing_field_input(
     update: Update, context: ContextTypes.DEFAULT_TYPE
 ) -> int:
@@ -1072,7 +1253,8 @@ async def handle_missing_field_input(
 async def edit_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     role = get_user_role(user_id)
-    logger.info("User %s started edit participant", user_id)
+    user_logger.log_user_action(user_id, "command_start", {"command": "/edit"})
+    _record_action(context, "/edit:start")
 
     await _send_response_with_menu_button(
         update,
@@ -1081,19 +1263,28 @@ async def edit_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "Пример: /edit 123 - редактировать участника с ID 123",
     )
 
+    user_logger.log_user_action(
+        user_id, "command_end", {"command": "/edit", "result": "not_implemented"}
+    )
+
 
 # Команда /delete
 @require_role("coordinator")
 async def delete_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     role = get_user_role(user_id)
-    logger.info("User %s started delete participant", user_id)
+    user_logger.log_user_action(user_id, "command_start", {"command": "/delete"})
+    _record_action(context, "/delete:start")
 
     await _send_response_with_menu_button(
         update,
         "🗑️ **Удаление участника** (заглушка)\n\n"
         "🔧 Функция в разработке.\n"
         "Пример: /delete 123 - удалить участника с ID 123",
+    )
+
+    user_logger.log_user_action(
+        user_id, "command_end", {"command": "/delete", "result": "not_implemented"}
     )
 
 
@@ -1125,10 +1316,13 @@ async def edit_field_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
         kwargs = {field_name: new_value}
         success = participant_service.update_participant_fields(
-            participant_id, **kwargs
+            participant_id, user_id=user_id, **kwargs
         )
 
         if success:
+            user_logger.log_participant_operation(
+                user_id, "update_fields", kwargs, participant_id
+            )
             await update.message.reply_text(
                 f"✅ **Поле обновлено!**\n\n"
                 f"🆔 ID: {participant_id}\n"
@@ -1154,7 +1348,8 @@ async def edit_field_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
 async def list_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     role = get_user_role(user_id)
-    logger.info("User %s requested participants list", user_id)
+    user_logger.log_user_action(user_id, "command_start", {"command": "/list"})
+    _record_action(context, "/list:start")
 
     # ✅ ИСПРАВЛЕНИЕ: используем новый service для получения списка
     participants = participant_service.get_all_participants()
@@ -1164,10 +1359,16 @@ async def list_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "📋 **Список участников пуст**\n\nИспользуйте /add для добавления участников.",
             parse_mode="Markdown",
         )
+        user_logger.log_user_action(
+            user_id, "command_end", {"command": "/list", "count": 0}
+        )
         return
 
     # Формируем список участников
     message = f"📋 **Список участников ({len(participants)} чел.):**\n\n"
+    user_logger.log_user_action(
+        user_id, "command_end", {"command": "/list", "count": len(participants)}
+    )
 
     for p in participants:
         role_emoji = "👤" if p.Role == "CANDIDATE" else "👨‍💼"
@@ -1185,6 +1386,10 @@ async def list_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 @require_role("viewer")
 async def export_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
+    user_logger.log_user_action(
+        user_id, "command_start", {"command": "/export", "params": context.args}
+    )
+    _record_action(context, "/export:start")
     role = get_user_role(user_id)
     logger.info("User %s requested export", user_id)
 
@@ -1194,12 +1399,16 @@ async def export_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "🔧 Функция в разработке.\n"
         "Пример: /export worship team - экспорт участников worship команды",
     )
+    user_logger.log_user_action(user_id, "command_end", {"command": "/export"})
 
 
 # Команда /cancel
 @require_role("viewer")
 async def cancel_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     user_id = update.effective_user.id
+    user_logger.log_user_action(user_id, "command_start", {"command": "/cancel"})
+    _record_action(context, "/cancel:start")
+    _log_session_end(context, user_id)
     if context.user_data:
         context.user_data.clear()
         logger.info("User %s cancelled the add flow.", user_id)
@@ -1208,6 +1417,7 @@ async def cancel_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
     await _cleanup_messages(context, update.effective_chat.id)
     await _show_main_menu(update, context, is_return=True)
+    user_logger.log_user_action(user_id, "command_end", {"command": "/cancel"})
     return ConversationHandler.END
 
 
@@ -1215,6 +1425,11 @@ async def cancel_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     """Handle cancel buttons and return to the main menu."""
     query = update.callback_query
     user_id = update.effective_user.id
+    user_logger.log_user_action(
+        user_id, "command_start", {"command": "cancel_callback", "data": query.data}
+    )
+    _record_action(context, "cancel_callback:start")
+    _log_session_end(context, user_id)
 
     logger.info(f"User {user_id} cancelled operation via {query.data}")
 
@@ -1223,6 +1438,7 @@ async def cancel_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     await _cleanup_messages(context, update.effective_chat.id)
     cleanup_user_data_safe(context, update.effective_user.id)
     await _show_main_menu(update, context, is_return=True)
+    user_logger.log_user_action(user_id, "command_end", {"command": "cancel_callback"})
     return ConversationHandler.END
 
 
@@ -1259,7 +1475,7 @@ async def process_participant_confirmation(
     existing_participant = None
     if not is_update:
         existing_participant = participant_service.check_duplicate(
-            participant_data["FullNameRU"]
+            participant_data["FullNameRU"], user_id=user_id
         )
 
     if existing_participant:
@@ -1340,6 +1556,7 @@ async def process_participant_confirmation(
 
 @require_role("coordinator")
 @smart_cleanup_on_error
+@log_state_transitions
 async def handle_save_confirmation(
     update: Update, context: ContextTypes.DEFAULT_TYPE
 ) -> int:
@@ -1367,7 +1584,7 @@ async def handle_save_confirmation(
     # Проверка на дубликат (только при создании нового)
     if not is_update:
         existing = participant_service.check_duplicate(
-            participant_data.get("FullNameRU")
+            participant_data.get("FullNameRU"), user_id=user_id
         )
         if existing:
             context.user_data["existing_participant_id"] = existing.get("id")
@@ -1385,15 +1602,37 @@ async def handle_save_confirmation(
     try:
         if is_update:
             participant_id = context.user_data["participant_id"]
-            participant_service.update_participant(participant_id, participant_data)
-            logger.info(
-                f"✅ User {user_id} successfully updated participant {participant_id}"
+            participant_service.update_participant(
+                participant_id, participant_data, user_id=user_id
+            )
+            user_logger.log_participant_operation(
+                user_id, "update", participant_data, participant_id
+            )
+            user_logger.log_user_action(
+                user_id,
+                "command_end",
+                {
+                    "command": "/add",
+                    "participant_id": participant_id,
+                    "result": "updated",
+                },
             )
             success_message = f"✅ **Участник {participant_data['FullNameRU']} (ID: {participant_id}) успешно обновлен!**"
         else:
-            new_participant = participant_service.add_participant(participant_data)
-            logger.info(
-                f"✅ User {user_id} successfully added participant {new_participant.id}: {new_participant.FullNameRU}"
+            new_participant = participant_service.add_participant(
+                participant_data, user_id=user_id
+            )
+            user_logger.log_participant_operation(
+                user_id, "add", participant_data, new_participant.id
+            )
+            user_logger.log_user_action(
+                user_id,
+                "command_end",
+                {
+                    "command": "/add",
+                    "participant_id": new_participant.id,
+                    "result": "added",
+                },
             )
             success_message = f"✅ **Участник {new_participant.FullNameRU} (ID: {new_participant.id}) успешно добавлен!**"
 
@@ -1432,6 +1671,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # Обработка подтверждения пользователя
 @require_role("coordinator")
 @smart_cleanup_on_error
+@log_state_transitions
 async def handle_participant_confirmation(
     update: Update, context: ContextTypes.DEFAULT_TYPE
 ) -> int:
@@ -1540,6 +1780,7 @@ async def edit_field_callback(
 
 
 @smart_cleanup_on_error
+@log_state_transitions
 async def handle_enum_selection(
     update: Update, context: ContextTypes.DEFAULT_TYPE
 ) -> int:
@@ -1683,6 +1924,7 @@ async def handle_recover_input(
 
 
 @smart_cleanup_on_error
+@log_state_transitions
 async def handle_duplicate_callback(
     update: Update, context: ContextTypes.DEFAULT_TYPE
 ) -> int:
@@ -1692,10 +1934,25 @@ async def handle_duplicate_callback(
 
     action = query.data
     participant_data = context.user_data.get("parsed_participant", {})
+    user_id = update.effective_user.id if update.effective_user else 0
 
     if action == "dup_add_new":
         try:
-            new_participant = participant_service.add_participant(participant_data)
+            new_participant = participant_service.add_participant(
+                participant_data, user_id=user_id
+            )
+            user_logger.log_participant_operation(
+                user_id, "add", participant_data, new_participant.id
+            )
+            user_logger.log_user_action(
+                user_id,
+                "command_end",
+                {
+                    "command": "/add",
+                    "participant_id": new_participant.id,
+                    "result": "added_duplicate",
+                },
+            )
         except ValidationError as e:
             await query.message.reply_text(f"❌ Ошибка валидации: {e}")
             return ConversationHandler.END
@@ -1720,11 +1977,25 @@ async def handle_duplicate_callback(
         )
 
     elif action == "dup_replace":
-        existing = participant_service.check_duplicate(participant_data["FullNameRU"])
+        existing = participant_service.check_duplicate(
+            participant_data["FullNameRU"], user_id=user_id
+        )
         if existing:
             try:
                 updated = participant_service.update_participant(
-                    existing.id, participant_data
+                    existing.id, participant_data, user_id=user_id
+                )
+                user_logger.log_participant_operation(
+                    user_id, "update", participant_data, existing.id
+                )
+                user_logger.log_user_action(
+                    user_id,
+                    "command_end",
+                    {
+                        "command": "/add",
+                        "participant_id": existing.id,
+                        "result": "updated_duplicate",
+                    },
                 )
             except ValidationError as e:
                 await query.message.reply_text(f"❌ Ошибка валидации: {e}")
@@ -1760,8 +2031,14 @@ async def handle_duplicate_callback(
 
 # Обработка ошибок
 async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE):
-    logger.error(
-        f"Bot error for update {update}: {context.error}", exc_info=context.error
+    error_type = type(context.error).__name__
+    ERROR_STATS[error_type] += 1
+    logging.getLogger("errors").error(
+        "Bot error for update %s: %s | count=%s",
+        update,
+        context.error,
+        ERROR_STATS[error_type],
+        exc_info=context.error,
     )
 
 
@@ -1775,6 +2052,9 @@ def main():
 
     # Создаем приложение
     application = Application.builder().token(BOT_TOKEN).build()
+
+    # Middleware to log all incoming updates
+    application.add_handler(MessageHandler(filters.ALL, log_all_updates), group=-1)
 
     add_conv = ConversationHandler(
         entry_points=[

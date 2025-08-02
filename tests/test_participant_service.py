@@ -46,7 +46,7 @@ class ParticipantServiceTestCase(unittest.TestCase):
             "Church": "Тест",
             "Role": "CANDIDATE",
         }
-        participant = self.service.add_participant(data)
+        participant = self.service.add_participant(data, user_id=1)
         self.assertIsNotNone(participant.id)
         self.assertEqual(participant.FullNameRU, "Тестовый Пользователь")
 

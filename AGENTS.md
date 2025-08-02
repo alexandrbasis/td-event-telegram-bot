@@ -52,3 +52,27 @@ The tests cover the participant parser (`test_parser.py`), database operations (
 - **Database initialization**: `participants.db` is not created automatically when running `main.py`. Execute `python3 database.py` before first use.
 - **Role-based access**: User IDs are hardcoded in `config.py`. Changing roles requires modifying the file and redeploying.
 - **State management**: Conversation states are defined in `states.py`. Ensure handlers respect the current state when extending conversation flows.
+
+## 7. Logging Guidelines
+- Every new command **must** log its usage with `UserActionLogger` at start and end.
+- Updates to business logic should include corresponding log entries.
+- When adding participant fields, ensure their changes are logged through `ParticipantService`.
+- Use `UserActionLogger` exclusively for user actions.
+
+### Examples
+```python
+user_logger.log_user_action(user_id, "command_start", {"command": "/add"})
+user_logger.log_participant_operation(user_id, "update", data, participant_id)
+```
+
+### Mandatory logging
+- Command start and completion
+- CRUD operations on participants
+- Conversation state transitions
+- Errors with full context
+
+### PR Checklist
+- [ ] Commands log start/end via `UserActionLogger`
+- [ ] `ParticipantService` logs all data changes
+- [ ] State handlers use `@log_state_transitions`
+- [ ] Tests cover logging when applicable
