@@ -13,6 +13,12 @@ from collections import Counter, defaultdict
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, Iterable, Tuple
+import os
+
+
+def get_log_path(filename: str) -> str:
+    """Get full path to log file in logs directory."""
+    return os.path.join("logs", filename)
 
 
 def _read_lines(path: Path) -> Iterable[Dict]:
@@ -27,7 +33,9 @@ def _read_lines(path: Path) -> Iterable[Dict]:
                 continue
 
 
-def user_activity_by_day(log_file: str) -> Dict[str, int]:
+def user_activity_by_day(log_file: str = None) -> Dict[str, int]:
+    if log_file is None:
+        log_file = get_log_path("user_actions.log")
     counts: Dict[str, int] = defaultdict(int)
     for entry in _read_lines(Path(log_file)):
         ts = entry.get("timestamp") or entry.get("time") or ""
@@ -36,7 +44,9 @@ def user_activity_by_day(log_file: str) -> Dict[str, int]:
     return dict(counts)
 
 
-def command_stats(log_file: str) -> Dict[str, int]:
+def command_stats(log_file: str = None) -> Dict[str, int]:
+    if log_file is None:
+        log_file = get_log_path("user_actions.log")
     counter: Counter[str] = Counter()
     for entry in _read_lines(Path(log_file)):
         if entry.get("event") == "user_action":

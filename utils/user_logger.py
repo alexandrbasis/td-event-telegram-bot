@@ -14,10 +14,15 @@ class UserActionLogger:
     logging.addLevelName(BUSINESS_LOGIC_LEVEL, "BUSINESS_LOGIC")
 
     def __init__(self) -> None:
+        import os
+
+        log_dir = "logs"
+        os.makedirs(log_dir, exist_ok=True)
+
         self.logger = logging.getLogger("user_action")
         if not self.logger.handlers:
             handler = RotatingFileHandler(
-                "user_actions.log", maxBytes=5 * 1024 * 1024, backupCount=5
+                f"{log_dir}/user_actions.log", maxBytes=5 * 1024 * 1024, backupCount=5
             )
             handler.setFormatter(logging.Formatter("%(message)s"))
             self.logger.addHandler(handler)
