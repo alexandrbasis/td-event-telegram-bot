@@ -59,6 +59,28 @@ The tests cover the participant parser (`test_parser.py`), database operations (
 - When adding participant fields, ensure their changes are logged through `ParticipantService`.
 - Use `UserActionLogger` exclusively for user actions.
 
+### Log Structure
+All logs are stored in the `logs/` directory:
+- `logs/bot.log` - General application logs
+- `logs/errors.log` - All errors with context
+- `logs/user_actions.log` - User actions (JSON format)
+- `logs/participant_changes.log` - Participant CRUD operations (JSON format)
+- `logs/performance.log` - Performance metrics (JSON format)
+- `logs/sql.log` - SQL queries (errors only)
+
+### Monitoring Commands
+```bash
+# Quick monitoring
+./scripts/monitor.sh stats              # Today's statistics
+./scripts/monitor.sh live-users         # Real-time user actions
+./scripts/monitor.sh live-errors        # Real-time errors
+./scripts/monitor.sh user 12345         # Specific user actions
+./scripts/monitor.sh report             # Generate HTML report
+
+# Log cleanup
+./scripts/log_cleanup.sh                # Archive old logs
+```
+
 ### Examples
 ```python
 user_logger.log_user_action(user_id, "command_start", {"command": "/add"})
@@ -76,3 +98,4 @@ user_logger.log_participant_operation(user_id, "update", data, participant_id)
 - [ ] `ParticipantService` logs all data changes
 - [ ] State handlers use `@log_state_transitions`
 - [ ] Tests cover logging when applicable
+- [ ] Check logs are written to `logs/` directory

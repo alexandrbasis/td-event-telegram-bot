@@ -469,28 +469,34 @@ LOG_FORMAT = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 
 def setup_logging() -> None:
     """Configure logging and separate log files."""
+    import os
+
+    # Создаем папку logs если её нет
+    log_dir = "logs"
+    os.makedirs(log_dir, exist_ok=True)
+
     bot_handler = RotatingFileHandler(
-        "bot.log", maxBytes=10 * 1024 * 1024, backupCount=5
+        f"{log_dir}/bot.log", maxBytes=10 * 1024 * 1024, backupCount=5
     )
     bot_handler.setFormatter(logging.Formatter(LOG_FORMAT))
 
     error_handler = RotatingFileHandler(
-        "errors.log", maxBytes=5 * 1024 * 1024, backupCount=5
+        f"{log_dir}/errors.log", maxBytes=5 * 1024 * 1024, backupCount=5
     )
     error_handler.setFormatter(logging.Formatter(LOG_FORMAT))
 
     participant_handler = RotatingFileHandler(
-        "participant_changes.log", maxBytes=5 * 1024 * 1024, backupCount=5
+        f"{log_dir}/participant_changes.log", maxBytes=5 * 1024 * 1024, backupCount=5
     )
     participant_handler.setFormatter(logging.Formatter(LOG_FORMAT))
 
     performance_handler = RotatingFileHandler(
-        "performance.log", maxBytes=5 * 1024 * 1024, backupCount=5
+        f"{log_dir}/performance.log", maxBytes=5 * 1024 * 1024, backupCount=5
     )
     performance_handler.setFormatter(logging.Formatter(LOG_FORMAT))
 
     sql_handler = RotatingFileHandler(
-        "sql.log", maxBytes=10 * 1024 * 1024, backupCount=5
+        f"{log_dir}/sql.log", maxBytes=10 * 1024 * 1024, backupCount=5
     )
     sql_handler.setFormatter(logging.Formatter(LOG_FORMAT))
 
