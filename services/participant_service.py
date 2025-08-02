@@ -1,6 +1,8 @@
 from typing import Dict, List, Optional, Tuple, Union
 from dataclasses import asdict
 import logging
+import json
+import time
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
 from repositories.participant_repository import AbstractParticipantRepository
@@ -367,12 +369,50 @@ class ParticipantService:
 
     def __init__(self, repository: AbstractParticipantRepository):
         self.repository = repository
+        self.logger = logging.getLogger("participant_changes")
+        self.performance_logger = logging.getLogger("performance")
 
-    def check_duplicate(self, full_name_ru: str) -> Optional[Participant]:
+    def _log_participant_change(
+        self,
+        user_id: Optional[int],
+        operation: str,
+        data: Dict,
+        participant_id: Optional[int] = None,
+        old_data: Optional[Dict] = None,
+    ) -> None:
+        entry = {
+            "user_id": user_id,
+            "operation": operation,
+            "data": data,
+        }
+        if participant_id is not None:
+            entry["participant_id"] = participant_id
+        if old_data is not None:
+            entry["old_data"] = old_data
+        self.logger.info(json.dumps(entry, ensure_ascii=False))
+
+    def check_duplicate(
+        self, full_name_ru: str, user_id: Optional[int] = None
+    ) -> Optional[Participant]:
         """Return participant if exists, otherwise None."""
-        return self.repository.get_by_name(full_name_ru)
+        start = time.time()
+        participant = self.repository.get_by_name(full_name_ru)
+        duration = time.time() - start
+        self.performance_logger.info(
+            json.dumps(
+                {
+                    "operation": "check_duplicate",
+                    "duration": duration,
+                    "user_id": user_id,
+                    "name": full_name_ru,
+                    "duplicate": bool(participant),
+                },
+                ensure_ascii=False,
+            )
+        )
+        return participant
 
-    def add_participant(self, data: Dict) -> Participant:
+    def add_participant(self, data: Dict, user_id: Optional[int] = None) -> Participant:
         """
         ✅ ОБНОВЛЕНО: создает объект Participant и передает в repository.
 
@@ -382,19 +422,35 @@ class ParticipantService:
         if not valid:
             raise ValidationError(error)
 
-        existing = self.check_duplicate(data.get("FullNameRU", ""))
+        existing = self.check_duplicate(data.get("FullNameRU", ""), user_id)
         if existing:
             raise DuplicateParticipantError(
                 f"Participant '{data.get('FullNameRU')}' already exists"
             )
 
         # ✅ ИСПРАВЛЕНИЕ: создаем объект Participant и передаем в repository
+        start = time.time()
         new_participant = Participant(**data)
         new_id = self.repository.add(new_participant)
+        duration = time.time() - start
         new_participant.id = new_id
+        self._log_participant_change(user_id, "add", data, participant_id=new_id)
+        self.performance_logger.info(
+            json.dumps(
+                {
+                    "operation": "add_participant",
+                    "duration": duration,
+                    "user_id": user_id,
+                    "participant_id": new_id,
+                },
+                ensure_ascii=False,
+            )
+        )
         return new_participant
 
-    def update_participant(self, participant_id: int, data: Dict) -> bool:
+    def update_participant(
+        self, participant_id: int, data: Dict, user_id: Optional[int] = None
+    ) -> bool:
         """
         ✅ ОБНОВЛЕНО: полное обновление через объект Participant.
 
@@ -415,10 +471,33 @@ class ParticipantService:
         updated_data = data.copy()
         updated_data["id"] = participant_id
 
+        start = time.time()
         updated_participant = Participant(**updated_data)
-        return self.repository.update(updated_participant)
+        result = self.repository.update(updated_participant)
+        duration = time.time() - start
+        self._log_participant_change(
+            user_id,
+            "update",
+            data,
+            participant_id=participant_id,
+            old_data=asdict(existing),
+        )
+        self.performance_logger.info(
+            json.dumps(
+                {
+                    "operation": "update_participant",
+                    "duration": duration,
+                    "user_id": user_id,
+                    "participant_id": participant_id,
+                },
+                ensure_ascii=False,
+            )
+        )
+        return result
 
-    def update_participant_fields(self, participant_id: int, **fields) -> bool:
+    def update_participant_fields(
+        self, participant_id: int, user_id: Optional[int] = None, **fields
+    ) -> bool:
         """
         ✅ НОВЫЙ МЕТОД: частичное обновление конкретных полей.
 
@@ -446,7 +525,24 @@ class ParticipantService:
                 if field_names & critical_fields:
                     raise ValidationError(error)
 
-        return self.repository.update_fields(participant_id, **fields)
+        start = time.time()
+        result = self.repository.update_fields(participant_id, **fields)
+        duration = time.time() - start
+        self._log_participant_change(
+            user_id, "update_fields", fields, participant_id=participant_id
+        )
+        self.performance_logger.info(
+            json.dumps(
+                {
+                    "operation": "update_fields",
+                    "duration": duration,
+                    "user_id": user_id,
+                    "participant_id": participant_id,
+                },
+                ensure_ascii=False,
+            )
+        )
+        return result
 
     def get_participant(self, participant_id: int) -> Optional[Participant]:
         """
@@ -462,12 +558,31 @@ class ParticipantService:
 
         return self.repository.get_all()
 
-    def delete_participant(self, participant_id: int) -> bool:
-        """
-        ✅ НОВЫЙ МЕТОД: удаление участника.
-        """
-
-        return self.repository.delete(participant_id)
+    def delete_participant(
+        self, participant_id: int, user_id: Optional[int] = None, reason: str = ""
+    ) -> bool:
+        """Delete participant and log reason."""
+        start = time.time()
+        result = self.repository.delete(participant_id)
+        duration = time.time() - start
+        self._log_participant_change(
+            user_id,
+            "delete",
+            {"reason": reason},
+            participant_id=participant_id,
+        )
+        self.performance_logger.info(
+            json.dumps(
+                {
+                    "operation": "delete_participant",
+                    "duration": duration,
+                    "user_id": user_id,
+                    "participant_id": participant_id,
+                },
+                ensure_ascii=False,
+            )
+        )
+        return result
 
     def participant_exists(self, participant_id: int) -> bool:
         """
