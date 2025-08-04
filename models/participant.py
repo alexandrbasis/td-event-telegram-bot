@@ -1,5 +1,5 @@
 from dataclasses import dataclass, field
-from typing import Optional
+from typing import Optional, Union
 
 
 @dataclass
@@ -17,4 +17,4 @@ class Participant:
     SubmittedBy: str = ""
     ContactInformation: str = ""
     CountryAndCity: str = ""
-    id: Optional[int] = field(default=None, compare=False)
+    id: Optional[Union[int, str]] = field(default=None, compare=False)
