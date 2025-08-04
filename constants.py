@@ -37,8 +37,8 @@ DEPARTMENT_DISPLAY = {
     "Refreshment": "Рефрешмент",
     "Worship": "Прославление",
     "Media": "Медиа",
-    "Духовенство": "Духовенство",
-    "Ректорат": "Ректорат",
+    "Clergy": "Духовенство",
+    "Rectorate": "Ректорат",
 }
 
 # Reverse lookups for parsing display names back to system keys
