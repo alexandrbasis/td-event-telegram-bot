@@ -35,7 +35,8 @@ try:
 except ImportError:
     AIRTABLE_AVAILABLE = False
     AirtableApiError = Exception  # Fallback
-from services.participant_service import ParticipantService
+from services.participant_service import ParticipantService, SearchResult
+from models.participant import Participant
 from parsers.participant_parser import (
     parse_participant_data,
     is_template_format,
@@ -68,12 +69,17 @@ from utils.exceptions import (
     DatabaseError,
 )
 from messages import MESSAGES
+from constants import GENDER_DISPLAY, ROLE_DISPLAY, DEPARTMENT_DISPLAY
 from states import (
     CONFIRMING_DATA,
     CONFIRMING_DUPLICATE,
     COLLECTING_DATA,
     FILLING_MISSING_FIELDS,
     RECOVERING,
+    SEARCHING_PARTICIPANTS,
+    SELECTING_PARTICIPANT,
+    CHOOSING_ACTION,
+    EXECUTING_ACTION,
 )
 
 BOT_VERSION = "0.1"
@@ -753,6 +759,36 @@ async def _send_response_with_menu_button(
 # --- HELPER FUNCTIONS (NEW) ---
 
 
+def get_main_menu_keyboard(user_id: int) -> InlineKeyboardMarkup:
+    """Создает клавиатуру главного меню в зависимости от роли пользователя."""
+
+    if user_id in COORDINATOR_IDS:
+        keyboard = [
+            [
+                InlineKeyboardButton("➕ Добавить", callback_data="main_add"),
+                InlineKeyboardButton("🔍 Поиск", callback_data="main_search"),
+            ],
+            [
+                InlineKeyboardButton("📋 Список", callback_data="main_list"),
+                InlineKeyboardButton("📤 Экспорт", callback_data="main_export"),
+            ],
+            [InlineKeyboardButton("ℹ️ Помощь", callback_data="main_help")],
+        ]
+    else:
+        keyboard = [
+            [
+                InlineKeyboardButton("🔍 Поиск", callback_data="main_search"),
+                InlineKeyboardButton("📋 Список", callback_data="main_list"),
+            ],
+            [
+                InlineKeyboardButton("📤 Экспорт", callback_data="main_export"),
+                InlineKeyboardButton("ℹ️ Помощь", callback_data="main_help"),
+            ],
+        ]
+
+    return InlineKeyboardMarkup(keyboard)
+
+
 def get_missing_fields(participant_data: Dict) -> List[str]:
     """Checks for missing required fields."""
     missing = []
@@ -868,29 +904,7 @@ async def _show_main_menu(
             "🏕️ **Добро пожаловать в бот Tres Dias Israel!**\n\n"
             f"👤 Ваша роль: **{role.title()}**"
         )
-
-    keyboard: list[list[InlineKeyboardButton]]
-    if user_id in COORDINATOR_IDS:
-        keyboard = [
-            [
-                InlineKeyboardButton("➕ Добавить", callback_data="main_add"),
-                InlineKeyboardButton("📋 Список", callback_data="main_list"),
-            ],
-            [
-                InlineKeyboardButton("📤 Экспорт", callback_data="main_export"),
-                InlineKeyboardButton("ℹ️ Помощь", callback_data="main_help"),
-            ],
-        ]
-    else:
-        keyboard = [
-            [
-                InlineKeyboardButton("📋 Список", callback_data="main_list"),
-                InlineKeyboardButton("📤 Экспорт", callback_data="main_export"),
-            ],
-            [InlineKeyboardButton("ℹ️ Помощь", callback_data="main_help")],
-        ]
-
-    reply_markup = InlineKeyboardMarkup(keyboard)
+    reply_markup = get_main_menu_keyboard(user_id)
 
     if update.callback_query:
         try:
@@ -1057,6 +1071,406 @@ async def handle_main_menu_callback(update: Update, context: ContextTypes.DEFAUL
         await _send_response_with_menu_button(update, help_text)
         return
 
+
+# --- SEARCH HANDLERS ---
+
+
+@require_role("viewer")
+async def search_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Инициация поиска участников через команду /search."""
+
+    user_id = update.effective_user.id
+    user_logger.log_user_action(user_id, "command_start", {"command": "/search"})
+    _record_action(context, "/search:start")
+
+    cancel_markup = InlineKeyboardMarkup(
+        [[InlineKeyboardButton("❌ Отмена", callback_data="main_cancel")]]
+    )
+
+    msg1 = await update.message.reply_text(
+        "🔍 **Поиск участников**\n\n"
+        "Введите для поиска:\n"
+        "• **Имя** (русское или английское)\n"
+        "• **ID участника** (например: 123)\n"
+        "• **Часть имени** (например: Иван)\n\n"
+        "💡 *Поиск поддерживает нечеткое совпадение*",
+        parse_mode="Markdown",
+        reply_markup=cancel_markup,
+    )
+
+    _add_message_to_cleanup(context, msg1.message_id)
+    _add_message_to_cleanup(context, update.message.message_id)
+
+    context.user_data["current_state"] = SEARCHING_PARTICIPANTS
+    return SEARCHING_PARTICIPANTS
+
+
+@require_role("viewer")
+async def handle_search_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Обработчик кнопки поиска из главного меню."""
+
+    query = update.callback_query
+    await query.answer()
+    await query.edit_message_reply_markup(reply_markup=None)
+
+    cancel_markup = InlineKeyboardMarkup(
+        [[InlineKeyboardButton("❌ Отмена", callback_data="main_cancel")]]
+    )
+
+    msg1 = await query.message.reply_text(
+        "🔍 **Поиск участников**\n\n"
+        "Введите для поиска:\n"
+        "• **Имя** (русское или английское)\n"
+        "• **ID участника** (например: 123)\n"
+        "• **Часть имени** (например: Иван)\n\n"
+        "💡 *Поиск поддерживает нечеткое совпадение*",
+        parse_mode="Markdown",
+        reply_markup=cancel_markup,
+    )
+
+    _add_message_to_cleanup(context, msg1.message_id)
+    _add_message_to_cleanup(context, query.message.message_id)
+
+    context.user_data["current_state"] = SEARCHING_PARTICIPANTS
+    return SEARCHING_PARTICIPANTS
+
+
+@smart_cleanup_on_error
+@log_state_transitions
+async def handle_search_input(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Обработка поискового запроса."""
+
+    user_id = update.effective_user.id
+    query_text = update.message.text.strip()
+
+    if len(query_text) < 2:
+        await update.message.reply_text(
+            "❌ Слишком короткий запрос. Введите минимум 2 символа."
+        )
+        return SEARCHING_PARTICIPANTS
+
+    _add_message_to_cleanup(context, update.message.message_id)
+
+    start = time.time()
+    search_results = participant_service.search_participants(query_text, max_results=5)
+    duration = time.time() - start
+
+    user_logger.log_user_action(
+        user_id,
+        "search_performed",
+        {"query": query_text, "results_count": len(search_results)},
+    )
+    user_logger.log_search_operation(
+        user_id,
+        query_text,
+        len(search_results),
+        duration,
+    )
+
+    if not search_results:
+        no_results_keyboard = InlineKeyboardMarkup(
+            [
+                [InlineKeyboardButton("🔍 Новый поиск", callback_data="main_search")],
+                [InlineKeyboardButton("🏠 Главное меню", callback_data="main_menu")],
+            ]
+        )
+
+        msg = await update.message.reply_text(
+            f"❌ **Участники не найдены**\n\n"
+            f"Поиск по запросу: *{query_text}*\n"
+            f"Попробуйте изменить запрос или проверить правильность написания.",
+            parse_mode="Markdown",
+            reply_markup=no_results_keyboard,
+        )
+        _add_message_to_cleanup(context, msg.message_id)
+        return SEARCHING_PARTICIPANTS
+
+    results_text = (
+        f"🔍 **Результаты поиска** (найдено: {len(search_results)})\n\n"
+    )
+    for result in search_results:
+        results_text += participant_service.format_search_result(result) + "\n\n"
+    results_text += "👆 Выберите участника для действий:"
+
+    keyboard = get_search_results_keyboard(search_results)
+    msg = await update.message.reply_text(
+        results_text, parse_mode="Markdown", reply_markup=keyboard
+    )
+    _add_message_to_cleanup(context, msg.message_id)
+
+    context.user_data["search_results"] = search_results
+    context.user_data["current_state"] = SELECTING_PARTICIPANT
+
+    return SELECTING_PARTICIPANT
+
+
+@smart_cleanup_on_error
+async def handle_participant_selection(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> int:
+    """Обработка выбора участника из результатов поиска."""
+
+    query = update.callback_query
+    await query.answer()
+
+    participant_id = int(query.data.split("_")[-1])
+    user_id = update.effective_user.id
+
+    search_results: List[SearchResult] = context.user_data.get("search_results", [])
+    selected_participant: Optional[Participant] = None
+    for result in search_results:
+        if result.participant.id == participant_id:
+            selected_participant = result.participant
+            break
+
+    if not selected_participant:
+        await query.message.reply_text(
+            "❌ Участник не найден. Попробуйте поиск снова."
+        )
+        return SEARCHING_PARTICIPANTS
+
+    user_logger.log_user_action(
+        user_id,
+        "participant_selected",
+        {
+            "participant_id": participant_id,
+            "participant_name": selected_participant.FullNameRU,
+        },
+    )
+
+    context.user_data["selected_participant"] = selected_participant
+
+    await show_participant_details_and_actions(update, context, selected_participant)
+
+    context.user_data["current_state"] = CHOOSING_ACTION
+    return CHOOSING_ACTION
+
+
+async def show_participant_details_and_actions(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    participant: Participant,
+) -> None:
+    """Показывает подробную информацию об участнике и доступные действия."""
+
+    user_id = update.effective_user.id
+    is_coordinator = user_id in COORDINATOR_IDS
+
+    details_text = f"👤 **{participant.FullNameRU}** (ID: {participant.id})\n\n"
+    if participant.FullNameEN:
+        details_text += f"🌍 **English:** {participant.FullNameEN}\n"
+    details_text += f"⚥ **Пол:** {GENDER_DISPLAY.get(participant.Gender, participant.Gender)}\n"
+    details_text += f"👕 **Размер:** {participant.Size or 'Не указано'}\n"
+    details_text += f"⛪ **Церковь:** {participant.Church or 'Не указано'}\n"
+    details_text += f"👥 **Роль:** {ROLE_DISPLAY.get(participant.Role, participant.Role)}\n"
+    if participant.Role == "TEAM" and participant.Department:
+        details_text += (
+            f"🏢 **Департамент:** {DEPARTMENT_DISPLAY.get(participant.Department, participant.Department)}\n"
+        )
+    if participant.CountryAndCity:
+        details_text += f"🏙️ **Город:** {participant.CountryAndCity}\n"
+    if participant.SubmittedBy:
+        details_text += f"👨‍💼 **Кто подал:** {participant.SubmittedBy}\n"
+    if participant.ContactInformation:
+        details_text += f"📞 **Контакты:** {participant.ContactInformation}\n"
+    details_text += (
+        f"\n🕐 **Создан:** {getattr(participant, 'created_at', 'Неизвестно')}"
+    )
+
+    keyboard = get_participant_actions_keyboard(participant, is_coordinator)
+
+    if update.callback_query:
+        msg = await update.callback_query.message.reply_text(
+            details_text, parse_mode="Markdown", reply_markup=keyboard
+        )
+    else:
+        msg = await update.message.reply_text(
+            details_text, parse_mode="Markdown", reply_markup=keyboard
+        )
+
+    _add_message_to_cleanup(context, msg.message_id)
+
+
+@smart_cleanup_on_error
+async def handle_action_selection(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> int:
+    """Обработка выбора действия над участником."""
+
+    query = update.callback_query
+    await query.answer()
+
+    action = query.data
+    user_id = update.effective_user.id
+    selected_participant: Optional[Participant] = context.user_data.get(
+        "selected_participant"
+    )
+
+    if not selected_participant:
+        await query.message.reply_text(
+            "❌ Участник не выбран. Начните поиск заново."
+        )
+        return ConversationHandler.END
+
+    participant_id = selected_participant.id
+    participant_name = selected_participant.FullNameRU
+
+    if action == "action_edit":
+        if user_id not in COORDINATOR_IDS:
+            await query.message.reply_text(
+                "❌ Только координаторы могут редактировать участников."
+            )
+            return CHOOSING_ACTION
+
+        context.user_data["participant_id"] = participant_id
+        context.user_data["parsed_participant"] = asdict(selected_participant)
+
+        user_logger.log_user_action(
+            user_id,
+            "edit_initiated",
+            {"participant_id": participant_id},
+        )
+
+        await show_confirmation(update, context, asdict(selected_participant))
+        return CONFIRMING_DATA
+
+    if action == "action_delete":
+        if user_id not in COORDINATOR_IDS:
+            await query.message.reply_text(
+                "❌ Только координаторы могут удалять участников."
+            )
+            return CHOOSING_ACTION
+
+        confirm_keyboard = InlineKeyboardMarkup(
+            [
+                [
+                    InlineKeyboardButton(
+                        "✅ Да, удалить", callback_data=f"confirm_delete_{participant_id}"
+                    ),
+                    InlineKeyboardButton("❌ Отмена", callback_data="action_cancel"),
+                ]
+            ]
+        )
+
+        await query.message.reply_text(
+            f"⚠️ **Подтверждение удаления**\n\n"
+            f"Вы действительно хотите удалить участника:\n"
+            f"**{participant_name}** (ID: {participant_id})?\n\n"
+            f"❗ *Это действие нельзя отменить.*",
+            parse_mode="Markdown",
+            reply_markup=confirm_keyboard,
+        )
+        return EXECUTING_ACTION
+
+    if action.startswith("confirm_delete_"):
+        participant_id = int(action.split("_")[-1])
+        try:
+            participant_service.delete_participant(
+                participant_id,
+                user_id=user_id,
+                reason="Manual deletion via search",
+            )
+            user_logger.log_participant_action(
+                user_id, "participant_deleted", participant_id, {}
+            )
+            success_keyboard = InlineKeyboardMarkup(
+                [
+                    [InlineKeyboardButton("🔍 Новый поиск", callback_data="main_search")],
+                    [InlineKeyboardButton("🏠 Главное меню", callback_data="main_menu")],
+                ]
+            )
+            await query.message.reply_text(
+                f"✅ **Участник удален**\n\n"
+                f"**{participant_name}** (ID: {participant_id}) успешно удален из базы данных.",
+                parse_mode="Markdown",
+                reply_markup=success_keyboard,
+            )
+        except Exception as e:  # pragma: no cover - log error
+            logger.error(f"Error deleting participant {participant_id}: {e}")
+            await query.message.reply_text(
+                f"❌ **Ошибка при удалении**\n\n"
+                f"Не удалось удалить участника {participant_name}. Попробуйте позже."
+            )
+
+        cleanup_user_data_safe(context, user_id)
+        return ConversationHandler.END
+
+    if action == "action_cancel":
+        await show_participant_details_and_actions(
+            update, context, selected_participant
+        )
+        return CHOOSING_ACTION
+
+    if action == "search_new":
+        cleanup_user_data_safe(context, user_id)
+        return await handle_search_callback(update, context)
+
+    return CHOOSING_ACTION
+
+
+def get_search_results_keyboard(results: List[SearchResult]) -> InlineKeyboardMarkup:
+    """Создает клавиатуру с результатами поиска (максимум 5 кнопок)."""
+
+    buttons: List[List[InlineKeyboardButton]] = []
+    for result in results[:5]:
+        participant = result.participant
+        confidence_emoji = "🎯" if result.confidence == 1.0 else "🔍"
+        role_emoji = "👤" if participant.Role == "CANDIDATE" else "👨‍💼"
+        button_text = f"{confidence_emoji} {role_emoji} {participant.FullNameRU}"
+        if len(button_text) > 30:
+            button_text = button_text[:27] + "..."
+
+        buttons.append(
+            [
+                InlineKeyboardButton(
+                    button_text,
+                    callback_data=f"select_participant_{participant.id}",
+                )
+            ]
+        )
+
+    buttons.append(
+        [
+            InlineKeyboardButton("🔍 Новый поиск", callback_data="main_search"),
+            InlineKeyboardButton("❌ Отмена", callback_data="main_cancel"),
+        ]
+    )
+
+    return InlineKeyboardMarkup(buttons)
+
+
+def get_participant_actions_keyboard(
+    participant: Participant, is_coordinator: bool
+) -> InlineKeyboardMarkup:
+    """Создает клавиатуру с доступными действиями."""
+
+    buttons: List[List[InlineKeyboardButton]] = []
+    if is_coordinator:
+        buttons.extend(
+            [
+                [
+                    InlineKeyboardButton(
+                        "✏️ Редактировать", callback_data="action_edit"
+                    ),
+                    InlineKeyboardButton(
+                        "🗑️ Удалить", callback_data="action_delete"
+                    ),
+                ],
+                [
+                    InlineKeyboardButton("🔍 Новый поиск", callback_data="search_new"),
+                    InlineKeyboardButton("🏠 Главное меню", callback_data="main_menu"),
+                ],
+            ]
+        )
+    else:
+        buttons.append(
+            [
+                InlineKeyboardButton("🔍 Новый поиск", callback_data="search_new"),
+                InlineKeyboardButton("🏠 Главное меню", callback_data="main_menu"),
+            ]
+        )
+
+    return InlineKeyboardMarkup(buttons)
 
 # Equivalent to the main_help callback handler
 # Команда /help
@@ -2125,6 +2539,40 @@ def main():
     # Middleware to log all incoming updates
     application.add_handler(MessageHandler(filters.ALL, log_all_updates), group=-1)
 
+    search_conv = ConversationHandler(
+        entry_points=[
+            CommandHandler("search", search_command),
+            CallbackQueryHandler(handle_search_callback, pattern="^main_search$"),
+        ],
+        states={
+            SEARCHING_PARTICIPANTS: [
+                MessageHandler(
+                    filters.TEXT & ~filters.COMMAND, handle_search_input
+                )
+            ],
+            SELECTING_PARTICIPANT: [
+                CallbackQueryHandler(
+                    handle_participant_selection, pattern="^select_participant_"
+                )
+            ],
+            CHOOSING_ACTION: [
+                CallbackQueryHandler(handle_action_selection, pattern="^action_"),
+                CallbackQueryHandler(handle_action_selection, pattern="^search_new$"),
+            ],
+            EXECUTING_ACTION: [
+                CallbackQueryHandler(
+                    handle_action_selection, pattern="^confirm_delete_"
+                ),
+                CallbackQueryHandler(handle_action_selection, pattern="^action_cancel$"),
+            ],
+        },
+        fallbacks=[
+            CommandHandler("cancel", cancel_command),
+            CallbackQueryHandler(cancel_callback, pattern="^main_cancel$"),
+            CallbackQueryHandler(handle_main_menu_callback, pattern="^main_menu$"),
+        ],
+    )
+
     add_conv = ConversationHandler(
         entry_points=[
             CommandHandler("add", add_command),
@@ -2178,6 +2626,7 @@ def main():
         ],
     )
     # ConversationHandler должен быть зарегистрирован первым
+    application.add_handler(search_conv)
     application.add_handler(add_conv)
 
     # Регистрируем обработчики команд

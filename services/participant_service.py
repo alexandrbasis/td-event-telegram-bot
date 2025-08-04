@@ -1,5 +1,5 @@
 from typing import Dict, List, Optional, Tuple, Union
-from dataclasses import asdict
+from dataclasses import asdict, dataclass
 import logging
 import json
 import time
@@ -49,6 +49,14 @@ FIELD_EMOJIS = {
     "SubmittedBy": "👨‍💼",
     "ContactInformation": "📞",
 }
+
+
+@dataclass
+class SearchResult:
+    participant: Participant
+    confidence: float
+    match_field: str  # "name_ru", "name_en", "id"
+    match_type: str  # "exact", "fuzzy", "partial"
 
 
 def merge_participant_data(
@@ -590,3 +598,165 @@ class ParticipantService:
         """
 
         return self.repository.exists(participant_id)
+
+    # --- Поисковые методы ---
+
+    def search_participants(
+        self,
+        query: str,
+        max_results: int = 5,
+        min_confidence: float = 0.6,
+    ) -> List[SearchResult]:
+        """Умный поиск участников по различным критериям."""
+
+        results: List[SearchResult] = []
+        query_cleaned = query.strip()
+
+        # 1. Поиск по ID
+        if query_cleaned.isdigit():
+            participant_id = int(query_cleaned)
+            participant = self.get_participant(participant_id)
+            if participant:
+                results.append(
+                    SearchResult(
+                        participant=participant,
+                        confidence=1.0,
+                        match_field="id",
+                        match_type="exact",
+                    )
+                )
+                return results
+
+        all_participants = self.get_all_participants()
+
+        # 2. Точные совпадения по именам
+        for p in all_participants:
+            if p.FullNameRU and p.FullNameRU.lower() == query_cleaned.lower():
+                results.append(
+                    SearchResult(
+                        participant=p,
+                        confidence=1.0,
+                        match_field="name_ru",
+                        match_type="exact",
+                    )
+                )
+                continue
+            if p.FullNameEN and p.FullNameEN.lower() == query_cleaned.lower():
+                results.append(
+                    SearchResult(
+                        participant=p,
+                        confidence=1.0,
+                        match_field="name_en",
+                        match_type="exact",
+                    )
+                )
+                continue
+
+        if results:
+            return results
+
+        # 3. Fuzzy поиск
+        results.extend(
+            self._fuzzy_search(query_cleaned, all_participants, min_confidence)
+        )
+
+        results.sort(key=lambda x: x.confidence, reverse=True)
+        return results[:max_results]
+
+    def _fuzzy_search(
+        self,
+        query: str,
+        participants: List[Participant],
+        min_confidence: float,
+    ) -> List[SearchResult]:
+        """Нечеткий поиск с использованием Levenshtein distance."""
+
+        results: List[SearchResult] = []
+        try:
+            import Levenshtein  # type: ignore
+
+            fuzzy_available = True
+        except ImportError:  # pragma: no cover - fallback when library missing
+            fuzzy_available = False
+
+        for p in participants:
+            ru_conf = self._calculate_similarity(
+                query, p.FullNameRU or "", fuzzy_available
+            )
+            if ru_conf >= min_confidence:
+                results.append(
+                    SearchResult(
+                        participant=p,
+                        confidence=ru_conf,
+                        match_field="name_ru",
+                        match_type="fuzzy" if fuzzy_available else "partial",
+                    )
+                )
+                continue
+
+            if p.FullNameEN:
+                en_conf = self._calculate_similarity(
+                    query, p.FullNameEN, fuzzy_available
+                )
+                if en_conf >= min_confidence:
+                    results.append(
+                        SearchResult(
+                            participant=p,
+                            confidence=en_conf,
+                            match_field="name_en",
+                            match_type="fuzzy"
+                            if fuzzy_available
+                            else "partial",
+                        )
+                    )
+
+        return results
+
+    def _calculate_similarity(
+        self, query: str, target: str, fuzzy_available: bool
+    ) -> float:
+        """Вычисляет похожесть строк."""
+
+        if not target:
+            return 0.0
+
+        query_lower = query.lower()
+        target_lower = target.lower()
+
+        if query_lower == target_lower:
+            return 1.0
+
+        if query_lower in target_lower or target_lower in query_lower:
+            return 0.8
+
+        if fuzzy_available:
+            import Levenshtein  # type: ignore
+
+            distance = Levenshtein.distance(query_lower, target_lower)
+            max_len = max(len(query_lower), len(target_lower))
+            if max_len == 0:
+                return 1.0
+            return max(0.0, 1.0 - (distance / max_len))
+
+        return 0.0
+
+    def format_search_result(self, result: SearchResult) -> str:
+        """Форматирует результат поиска для отображения."""
+
+        p = result.participant
+        confidence_emoji = "🎯" if result.confidence == 1.0 else "🔍"
+        role_emoji = "👤" if p.Role == "CANDIDATE" else "👨‍💼"
+
+        text = f"{confidence_emoji} {role_emoji} **{p.FullNameRU}** (ID: {p.id})\n"
+        text += f"   • Церковь: {p.Church}\n"
+        text += f"   • Роль: {p.Role}"
+        if p.Role == "TEAM" and p.Department:
+            text += f" ({p.Department})"
+
+        if result.match_field == "name_en" and p.FullNameEN:
+            text += f"\n   • English: {p.FullNameEN}"
+
+        if result.confidence < 1.0:
+            text += f"\n   • Совпадение: {int(result.confidence * 100)}%"
+
+        return text
