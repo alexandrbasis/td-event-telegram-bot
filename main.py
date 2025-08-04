@@ -18,6 +18,7 @@ from telegram.ext import (
     CallbackQueryHandler,
     filters,
 )
+import config
 from config import BOT_TOKEN, BOT_USERNAME, COORDINATOR_IDS, VIEWER_IDS
 from utils.decorators import require_role
 from utils.cache import load_reference_data
@@ -25,6 +26,15 @@ from utils.timeouts import set_edit_timeout, clear_expired_edit
 from utils.user_logger import UserActionLogger
 from database import init_database
 from repositories.participant_repository import SqliteParticipantRepository
+from repositories.airtable_participant_repository import AirtableParticipantRepository
+
+try:
+    from pyairtable.api.exceptions import AirtableApiError
+
+    AIRTABLE_AVAILABLE = True
+except ImportError:
+    AIRTABLE_AVAILABLE = False
+    AirtableApiError = Exception  # Fallback
 from services.participant_service import ParticipantService
 from parsers.participant_parser import (
     parse_participant_data,
@@ -593,8 +603,8 @@ async def log_all_updates(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 FIELD_EDIT_TIMEOUT = 300
 
 # Initialize repository and service instances
-participant_repository = SqliteParticipantRepository()
-participant_service = ParticipantService(repository=participant_repository)
+participant_repository = None
+participant_service = None
 
 # --- REQUIRED AND OPTIONAL FIELDS ---
 REQUIRED_FIELDS = ["FullNameRU", "Gender", "Size", "Church", "Role"]
@@ -2044,22 +2054,70 @@ async def handle_duplicate_callback(
 async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE):
     error_type = type(context.error).__name__
     ERROR_STATS[error_type] += 1
-    logging.getLogger("errors").error(
-        "Bot error for update %s: %s | count=%s",
-        update,
-        context.error,
-        ERROR_STATS[error_type],
-        exc_info=context.error,
-    )
+
+    # Special handling for Airtable errors
+    if AIRTABLE_AVAILABLE and isinstance(context.error, AirtableApiError):
+        logging.getLogger("errors").error(
+            "Airtable API error for update %s: %s | count=%s",
+            update,
+            context.error,
+            ERROR_STATS[error_type],
+            exc_info=context.error,
+        )
+    else:
+        logging.getLogger("errors").error(
+            "Bot error for update %s: %s | count=%s",
+            update,
+            context.error,
+            ERROR_STATS[error_type],
+            exc_info=context.error,
+        )
+
+
+# Factory for participant repositories
+def create_participant_repository():
+    """Factory function to create the appropriate participant repository."""
+    if config.DATABASE_TYPE == "airtable":
+        logger.info("Using Airtable as database backend")
+        return AirtableParticipantRepository()
+    else:
+        logger.info("Using SQLite as database backend")
+        return SqliteParticipantRepository()
 
 
 # Основная функция
 def main():
-    # Инициализируем базу данных
-    init_database()
+    # Проверка конфигурации при старте
+    if config.DATABASE_TYPE == "airtable":
+        if not config.AIRTABLE_TOKEN or not config.AIRTABLE_BASE_ID:
+            print("❌ ERROR: Airtable configuration incomplete!")
+            print("   Set AIRTABLE_TOKEN and AIRTABLE_BASE_ID in .env file")
+            return
+
+        # Test Airtable connection
+        try:
+            from repositories.airtable_client import AirtableClient
+
+            client = AirtableClient()
+            if not client.test_connection():
+                print("❌ ERROR: Cannot connect to Airtable!")
+                return
+            print("✅ Airtable connection successful")
+        except Exception as e:
+            print(f"❌ ERROR: Airtable connection failed: {e}")
+            return
+
+    # Инициализируем базу данных только для SQLite
+    if config.DATABASE_TYPE != "airtable":
+        init_database()
 
     # Загружаем справочники в кэш
     load_reference_data()
+
+    # Initialize repository and service instances
+    global participant_repository, participant_service
+    participant_repository = create_participant_repository()
+    participant_service = ParticipantService(repository=participant_repository)
 
     # Создаем приложение
     application = Application.builder().token(BOT_TOKEN).build()
@@ -2145,7 +2203,9 @@ def main():
     # Обработчик ошибок
     application.add_error_handler(error_handler)
 
+    database_type = config.DATABASE_TYPE.upper()
     print(f"🤖 Бот @{BOT_USERNAME} запущен!")
+    print(f"🗄️ Database: {database_type}")
     print("🔄 Polling started...")
 
     # Запускаем бота
