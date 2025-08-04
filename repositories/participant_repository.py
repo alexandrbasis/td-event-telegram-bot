@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from typing import List, Dict, Optional, Set
+from typing import List, Dict, Optional, Set, Union
 
 # Используем dataclass из models, чтобы работать с объектами, а не словарями
 from models.participant import Participant
@@ -17,7 +17,7 @@ class AbstractParticipantRepository(ABC):
     """
 
     @abstractmethod
-    def add(self, participant: Participant) -> int:
+    def add(self, participant: Participant) -> Union[int, str]:
         """
         Добавляет участника и возвращает его ID.
 
@@ -25,7 +25,7 @@ class AbstractParticipantRepository(ABC):
             participant: Объект участника для добавления
 
         Returns:
-            int: ID созданного участника
+            Union[int, str]: ID созданного участника
 
         Raises:
             ValidationError: При неверных данных
@@ -165,7 +165,7 @@ class SqliteParticipantRepository(AbstractParticipantRepository):
     def add(self, participant: Participant) -> int:
         logger.info(f"Adding participant to SQLite: {participant.FullNameRU}")
         participant_data = asdict(participant)
-        participant_data.pop('id', None)  # Убираем ID перед добавлением
+        participant_data.pop("id", None)  # Убираем ID перед добавлением
         try:
             return add_participant(participant_data)
         except sqlite3.Error as e:
@@ -183,7 +183,11 @@ class SqliteParticipantRepository(AbstractParticipantRepository):
             return None
 
         # Фильтруем только валидные поля для Participant dataclass
-        valid_fields = {k: v for k, v in participant_dict.items() if k in Participant.__annotations__}
+        valid_fields = {
+            k: v
+            for k, v in participant_dict.items()
+            if k in Participant.__annotations__
+        }
         return Participant(**valid_fields)
 
     def get_by_name(self, full_name_ru: str) -> Optional[Participant]:
@@ -193,7 +197,11 @@ class SqliteParticipantRepository(AbstractParticipantRepository):
         except sqlite3.Error as e:
             raise DatabaseError(f"SQLite error on get_by_name: {e}") from e
         if participant_dict:
-            valid_fields = {k: v for k, v in participant_dict.items() if k in Participant.__annotations__}
+            valid_fields = {
+                k: v
+                for k, v in participant_dict.items()
+                if k in Participant.__annotations__
+            }
             return Participant(**valid_fields)
         return None
 
@@ -204,7 +212,9 @@ class SqliteParticipantRepository(AbstractParticipantRepository):
         except sqlite3.Error as e:
             raise DatabaseError(f"SQLite error on get_all: {e}") from e
         return [
-            Participant(**{k: v for k, v in p.items() if k in Participant.__annotations__})
+            Participant(
+                **{k: v for k, v in p.items() if k in Participant.__annotations__}
+            )
             for p in participants_list_of_dicts
         ]
 
@@ -215,11 +225,13 @@ class SqliteParticipantRepository(AbstractParticipantRepository):
         if participant.id is None:
             raise ValueError("Participant ID must be set for update operation")
 
-        logger.info(f"Updating participant in SQLite: {participant.FullNameRU} (ID: {participant.id})")
+        logger.info(
+            f"Updating participant in SQLite: {participant.FullNameRU} (ID: {participant.id})"
+        )
 
         # Конвертируем в Dict для database слоя
         participant_data = asdict(participant)
-        participant_data.pop('id', None)  # Убираем ID из данных
+        participant_data.pop("id", None)  # Убираем ID из данных
 
         try:
             return update_participant(participant.id, participant_data)
@@ -244,7 +256,9 @@ class SqliteParticipantRepository(AbstractParticipantRepository):
         # Получаем текущего участника
         current = self.get_by_id(participant_id)
         if current is None:
-            raise ParticipantNotFoundError(f"Participant with id {participant_id} not found")
+            raise ParticipantNotFoundError(
+                f"Participant with id {participant_id} not found"
+            )
 
         # Создаем обновленную копию
         current_dict = asdict(current)
