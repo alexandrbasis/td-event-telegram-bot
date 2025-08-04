@@ -8,3 +8,9 @@ FILLING_MISSING_FIELDS = 5
 
 # Состояние восстановления после технических ошибок
 RECOVERING = 6
+
+# Состояния для поиска участников
+SEARCHING_PARTICIPANTS = 7
+SELECTING_PARTICIPANT = 8
+CHOOSING_ACTION = 9
+EXECUTING_ACTION = 10

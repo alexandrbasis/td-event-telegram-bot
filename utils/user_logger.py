@@ -64,6 +64,44 @@ class UserActionLogger:
             data["participant_id"] = participant_id
         self._log(self.BUSINESS_LOGIC_LEVEL, data)
 
+    def log_search_operation(
+        self,
+        user_id: int,
+        query: str,
+        results_count: int,
+        search_duration: float,
+        selected_participant_id: Optional[int] = None,
+    ) -> None:
+        """Логирует операцию поиска участников."""
+
+        data: Dict[str, Any] = {
+            "event": "search_operation",
+            "user_id": user_id,
+            "query": query,
+            "results_count": results_count,
+            "search_duration": search_duration,
+            "selected_participant_id": selected_participant_id,
+        }
+        self._log(self.BUSINESS_LOGIC_LEVEL, data)
+
+    def log_participant_action(
+        self,
+        user_id: int,
+        action: str,
+        participant_id: int,
+        details: Dict[str, Any],
+    ) -> None:
+        """Логирует действия с участниками."""
+
+        data: Dict[str, Any] = {
+            "event": "participant_action",
+            "user_id": user_id,
+            "action": action,
+            "participant_id": participant_id,
+            "details": details,
+        }
+        self._log(self.BUSINESS_LOGIC_LEVEL, data)
+
     def log_state_transition(
         self,
         user_id: int,
