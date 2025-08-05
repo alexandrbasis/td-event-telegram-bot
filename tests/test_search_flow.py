@@ -1,0 +1,58 @@
+import unittest
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, MagicMock, patch
+
+from main import handle_search_callback, cancel_callback, SEARCHING_PARTICIPANTS
+
+
+class SearchFlowTestCase(unittest.IsolatedAsyncioTestCase):
+    async def test_search_after_cancel(self):
+        context = SimpleNamespace(user_data={}, chat_data={})
+        update = SimpleNamespace(
+            callback_query=MagicMock(), effective_user=SimpleNamespace(id=1)
+        )
+
+        async def mock_show_search_prompt(update, context, is_callback=True):
+            context.user_data["current_state"] = SEARCHING_PARTICIPANTS
+            return SEARCHING_PARTICIPANTS
+
+        with patch(
+            "main._show_search_prompt", side_effect=mock_show_search_prompt
+        ), patch("main.user_logger"), patch(
+            "main._cleanup_messages", new=AsyncMock()
+        ), patch(
+            "main._show_main_menu", new=AsyncMock()
+        ), patch(
+            "main._log_session_end"
+        ), patch(
+            "utils.decorators.VIEWER_IDS", [1]
+        ), patch(
+            "utils.decorators.COORDINATOR_IDS", []
+        ):
+            state = await handle_search_callback(update, context)
+            self.assertEqual(state, SEARCHING_PARTICIPANTS)
+            self.assertIn("current_state", context.user_data)
+
+            context.chat_data["conversation"] = "active"
+
+            cancel_update = SimpleNamespace(
+                callback_query=MagicMock(answer=AsyncMock()),
+                effective_user=SimpleNamespace(id=1),
+                effective_chat=SimpleNamespace(id=1),
+            )
+
+            await cancel_callback(cancel_update, context)
+
+            self.assertEqual(context.user_data, {})
+            self.assertEqual(context.chat_data, {})
+
+            update2 = SimpleNamespace(
+                callback_query=MagicMock(), effective_user=SimpleNamespace(id=1)
+            )
+            state2 = await handle_search_callback(update2, context)
+            self.assertEqual(state2, SEARCHING_PARTICIPANTS)
+            self.assertIn("current_state", context.user_data)
+
+
+if __name__ == "__main__":
+    unittest.main()
