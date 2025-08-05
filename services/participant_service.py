@@ -474,7 +474,7 @@ class ParticipantService:
         return new_participant
 
     def update_participant(
-        self, participant_id: int, data: Dict, user_id: Optional[int] = None
+        self, participant_id: Union[int, str], data: Dict, user_id: Optional[int] = None
     ) -> bool:
         """
         ✅ ОБНОВЛЕНО: полное обновление через объект Participant.
@@ -521,7 +521,7 @@ class ParticipantService:
         return result
 
     def update_participant_fields(
-        self, participant_id: int, user_id: Optional[int] = None, **fields
+        self, participant_id: Union[int, str], user_id: Optional[int] = None, **fields
     ) -> bool:
         """
         ✅ НОВЫЙ МЕТОД: частичное обновление конкретных полей.
@@ -569,7 +569,7 @@ class ParticipantService:
         )
         return result
 
-    def get_participant(self, participant_id: int) -> Optional[Participant]:
+    def get_participant(self, participant_id: Union[int, str]) -> Optional[Participant]:
         """
         ✅ НОВЫЙ МЕТОД: получение участника по ID.
         """
@@ -584,7 +584,7 @@ class ParticipantService:
         return self.repository.get_all()
 
     def delete_participant(
-        self, participant_id: int, user_id: Optional[int] = None, reason: str = ""
+        self, participant_id: Union[int, str], user_id: Optional[int] = None, reason: str = ""
     ) -> bool:
         """Delete participant and log reason."""
         start = time.time()
@@ -609,7 +609,7 @@ class ParticipantService:
         )
         return result
 
-    def participant_exists(self, participant_id: int) -> bool:
+    def participant_exists(self, participant_id: Union[int, str]) -> bool:
         """
         ✅ НОВЫЙ МЕТОД: проверка существования участника.
         """

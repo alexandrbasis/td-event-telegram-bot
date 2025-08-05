@@ -1,11 +1,11 @@
 import logging
-from typing import List, Optional
+from typing import List, Optional, Union
 import time
 
 from pyairtable.api.types import RecordDict
 from pyairtable.formulas import match
 
-from repositories.participant_repository import AbstractParticipantRepository
+from repositories.participant_repository import BaseParticipantRepository
 from models.participant import Participant
 from repositories.airtable_client import AirtableClient
 from utils.exceptions import (
@@ -18,7 +18,7 @@ from utils.exceptions import (
 logger = logging.getLogger(__name__)
 
 
-class AirtableParticipantRepository(AbstractParticipantRepository):
+class AirtableParticipantRepository(BaseParticipantRepository):
     """Airtable implementation of participant repository."""
 
     def __init__(self):
@@ -74,8 +74,9 @@ class AirtableParticipantRepository(AbstractParticipantRepository):
             logger.error(f"Error adding participant to Airtable: {e}")
             raise DatabaseError(f"Airtable error on add: {e}") from e
 
-    def get_by_id(self, participant_id: str) -> Optional[Participant]:
+    def get_by_id(self, participant_id: Union[int, str]) -> Optional[Participant]:
         """Get participant by Airtable record ID."""
+        participant_id = str(participant_id)
         logger.info(f"Getting participant by ID from Airtable: {participant_id}")
 
         try:
@@ -151,14 +152,10 @@ class AirtableParticipantRepository(AbstractParticipantRepository):
             logger.error(f"Error updating participant: {e}")
             raise DatabaseError(f"Airtable error on update: {e}") from e
 
-    def update_fields(self, participant_id: str, **fields) -> bool:
+    def update_fields(self, participant_id: Union[int, str], **fields) -> bool:
         """Update specific fields for a participant."""
-        # Validate fields against Participant dataclass
-        valid_field_names = set(Participant.__annotations__.keys()) - {'id'}
-        invalid_fields = set(fields.keys()) - valid_field_names
-
-        if invalid_fields:
-            raise ValueError(f"Invalid fields for Participant: {invalid_fields}")
+        participant_id = str(participant_id)
+        self._validate_fields(**fields)
 
         logger.info(
             f"Updating fields for participant {participant_id}: {list(fields.keys())}"
@@ -183,8 +180,9 @@ class AirtableParticipantRepository(AbstractParticipantRepository):
             logger.error(f"Error updating participant fields: {e}")
             raise DatabaseError(f"Airtable error on update_fields: {e}") from e
 
-    def delete(self, participant_id: str) -> bool:
+    def delete(self, participant_id: Union[int, str]) -> bool:
         """Delete participant from Airtable."""
+        participant_id = str(participant_id)
         logger.info(f"Deleting participant from Airtable: {participant_id}")
 
         try:
@@ -201,7 +199,7 @@ class AirtableParticipantRepository(AbstractParticipantRepository):
             logger.error(f"Error deleting participant: {e}")
             raise DatabaseError(f"Airtable error on delete: {e}") from e
 
-    def exists(self, participant_id: str) -> bool:
+    def exists(self, participant_id: Union[int, str]) -> bool:
         """Check if participant exists in Airtable."""
         return self.get_by_id(participant_id) is not None
 
