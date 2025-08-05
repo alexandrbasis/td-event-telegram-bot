@@ -10,18 +10,22 @@ class ParticipantRepositoryAdapter(ParticipantRepositoryInterface):
         self.legacy_repository = legacy_repository
 
     async def save(self, participant: Participant) -> Participant | None:
-        # Конвертируем новую модель в старую
         legacy_participant = participant.to_legacy()
-
-        # Используем старый репозиторий
         if participant.id:
             success = self.legacy_repository.update(legacy_participant)
             return participant if success else None
-        else:
-            participant_id = self.legacy_repository.add(legacy_participant)
-            participant.id = participant_id
-            return participant
+        participant_id = self.legacy_repository.add(legacy_participant)
+        participant.id = participant_id
+        return participant
 
     async def find_by_id(self, id: int) -> Participant | None:
         legacy_participant = self.legacy_repository.get_by_id(id)
-        return Participant.from_legacy(legacy_participant) if legacy_participant else None
+        return (
+            Participant.from_legacy(legacy_participant) if legacy_participant else None
+        )
+
+    async def find_by_name(self, name: str) -> Participant | None:
+        legacy_participant = self.legacy_repository.get_by_name(name)
+        return (
+            Participant.from_legacy(legacy_participant) if legacy_participant else None
+        )
