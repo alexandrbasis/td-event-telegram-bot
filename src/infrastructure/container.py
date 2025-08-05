@@ -39,6 +39,32 @@ class Container(containers.DeclarativeContainer):
         validator=participant_validator,
     )
 
+    search_participants_use_case = providers.Factory(
+        "application.use_cases.search_participant.SearchParticipantsUseCase",
+        participant_service=legacy_participant_service,
+    )
+
+    list_participants_use_case = providers.Factory(
+        "application.use_cases.list_participants.ListParticipantsUseCase",
+        participant_service=legacy_participant_service,
+    )
+
+    get_participant_use_case = providers.Factory(
+        "application.use_cases.get_participant.GetParticipantUseCase",
+        participant_service=legacy_participant_service,
+    )
+
+    update_participant_use_case = providers.Factory(
+        "application.use_cases.update_participant.UpdateParticipantUseCase",
+        participant_service=legacy_participant_service,
+        validator=participant_validator,
+    )
+
+    delete_participant_use_case = providers.Factory(
+        "application.use_cases.delete_participant.DeleteParticipantUseCase",
+        participant_service=legacy_participant_service,
+    )
+
     # Controllers
     participant_controller = providers.Factory(
         "application.controllers.participant_controller.ParticipantController",

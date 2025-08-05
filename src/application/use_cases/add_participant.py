@@ -1,9 +1,12 @@
 from dataclasses import dataclass
 
+import logging
+
 from domain.models.participant import Participant
 from domain.services.participant_validator import ParticipantValidator
 from domain.interfaces.repositories import ParticipantRepositoryInterface
 from shared.exceptions import ValidationError
+from .decorators import log_use_case
 
 
 @dataclass
@@ -20,7 +23,9 @@ class AddParticipantUseCase:
     ):
         self.repository = repository
         self.validator = validator
+        self.logger = logging.getLogger(__name__)
 
+    @log_use_case
     async def execute(self, command: AddParticipantCommand) -> Participant:
         """Validate and persist a new participant."""
 

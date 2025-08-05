@@ -172,6 +172,7 @@ class HelpCommandHandler(BaseHandler):
 class ListCommandHandler(BaseHandler):
     def __init__(self, container):
         super().__init__(container)
+        self.list_use_case = container.list_participants_use_case()
         self._handle = require_role("viewer")(self._handle)
 
     async def _handle(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -189,7 +190,7 @@ class ListCommandHandler(BaseHandler):
             )
         _record_action(context, "/list:start")
 
-        participants = self.participant_service.get_all_participants()
+        participants = await self.list_use_case.execute()
 
         if not participants:
             empty_keyboard = InlineKeyboardMarkup(
