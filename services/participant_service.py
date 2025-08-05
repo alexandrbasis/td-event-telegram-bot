@@ -1,11 +1,28 @@
 import json
 import logging
+import sys
 import time
 from dataclasses import asdict, dataclass
+from pathlib import Path
 from typing import Dict, List, Optional, Tuple, Union
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
+sys.path.append(str(Path(__file__).resolve().parent.parent / "src"))
+
+from presentation.ui.keyboards import (
+    get_department_selection_keyboard,
+    get_department_selection_keyboard_required,
+    get_edit_keyboard,
+    get_gender_selection_keyboard,
+    get_gender_selection_keyboard_required,
+    get_gender_selection_keyboard_simple,
+    get_role_selection_keyboard,
+    get_role_selection_keyboard_required,
+    get_size_selection_keyboard,
+    get_size_selection_keyboard_required,
+)
+from presentation.ui.formatters import MessageFormatter
 from repositories.participant_repository import AbstractParticipantRepository
 from models.participant import Participant
 from database import find_participant_by_name
@@ -98,195 +115,8 @@ def merge_participant_data(
 
 
 def format_participant_block(data: Dict) -> str:
-    gender_key = data.get("Gender") or ""
-    size_key = data.get("Size") or ""
-    role_key = data.get("Role") or ""
-    dept_key = data.get("Department") or ""
-
-    gender = GENDER_DISPLAY.get(gender_key, "Не указано")
-    size = SIZE_DISPLAY.get(size_key, "Не указано")
-    role = ROLE_DISPLAY.get(role_key, role_key)
-    department = DEPARTMENT_DISPLAY.get(dept_key, dept_key or "Не указано")
-
-    text = (
-        f"Имя (рус): {data.get('FullNameRU') or 'Не указано'}\n"
-        f"Имя (англ): {data.get('FullNameEN') or 'Не указано'}\n"
-        f"Пол: {gender}\n"
-        f"Размер: {size}\n"
-        f"Церковь: {data.get('Church') or 'Не указано'}\n"
-        f"Роль: {role}"
-    )
-
-    if role_key == "TEAM":
-        text += f"\nДепартамент: {department}"
-
-    text += (
-        f"\nГород: {data.get('CountryAndCity') or 'Не указано'}\n"
-        f"Кто подал: {data.get('SubmittedBy') or 'Не указано'}\n"
-        f"Контакты: {data.get('ContactInformation') or 'Не указано'}"
-    )
-    return text
-
-
-def get_gender_selection_keyboard() -> InlineKeyboardMarkup:
-    """Клавиатура для выбора пола."""
-    buttons = [
-        [InlineKeyboardButton("\U0001f468 Мужской", callback_data="gender_M")],
-        [InlineKeyboardButton("\U0001f469 Женский", callback_data="gender_F")],
-        [InlineKeyboardButton("↩️ Назад", callback_data="field_edit_cancel")],
-    ]
-    return InlineKeyboardMarkup(buttons)
-
-
-def get_role_selection_keyboard() -> InlineKeyboardMarkup:
-    """Клавиатура для выбора роли."""
-    buttons = [
-        [InlineKeyboardButton("\U0001f464 Кандидат", callback_data="role_CANDIDATE")],
-        [InlineKeyboardButton("\U0001f465 Команда", callback_data="role_TEAM")],
-        [InlineKeyboardButton("↩️ Назад", callback_data="field_edit_cancel")],
-    ]
-    return InlineKeyboardMarkup(buttons)
-
-
-def get_gender_selection_keyboard_required() -> InlineKeyboardMarkup:
-    """Keyboard for gender selection without manual input."""
-    buttons = [
-        [InlineKeyboardButton("\U0001f468 Мужской", callback_data="gender_M")],
-        [InlineKeyboardButton("\U0001f469 Женский", callback_data="gender_F")],
-        [InlineKeyboardButton("↩️ Назад", callback_data="field_edit_cancel")],
-    ]
-    return InlineKeyboardMarkup(buttons)
-
-
-def get_role_selection_keyboard_required() -> InlineKeyboardMarkup:
-    """Keyboard for role selection without manual input."""
-    buttons = [
-        [InlineKeyboardButton("\U0001f464 Кандидат", callback_data="role_CANDIDATE")],
-        [InlineKeyboardButton("\U0001f465 Команда", callback_data="role_TEAM")],
-        [InlineKeyboardButton("↩️ Назад", callback_data="field_edit_cancel")],
-    ]
-    return InlineKeyboardMarkup(buttons)
-
-
-def get_size_selection_keyboard_required() -> InlineKeyboardMarkup:
-    """Keyboard for size selection without manual input."""
-    buttons = [
-        [
-            InlineKeyboardButton("XS", callback_data="size_XS"),
-            InlineKeyboardButton("S", callback_data="size_S"),
-            InlineKeyboardButton("M", callback_data="size_M"),
-        ],
-        [
-            InlineKeyboardButton("L", callback_data="size_L"),
-            InlineKeyboardButton("XL", callback_data="size_XL"),
-            InlineKeyboardButton("XXL", callback_data="size_XXL"),
-        ],
-        [InlineKeyboardButton("3XL", callback_data="size_3XL")],
-        [InlineKeyboardButton("↩️ Назад", callback_data="field_edit_cancel")],
-    ]
-    return InlineKeyboardMarkup(buttons)
-
-
-def get_department_selection_keyboard_required() -> InlineKeyboardMarkup:
-    """Keyboard for department selection without manual input."""
-    buttons = []
-    dept_items = list(DEPARTMENT_DISPLAY.items())
-    for i in range(0, len(dept_items), 2):
-        row = []
-        for j in range(i, min(i + 2, len(dept_items))):
-            key, display_name = dept_items[j]
-            row.append(InlineKeyboardButton(display_name, callback_data=f"dept_{key}"))
-        buttons.append(row)
-
-    buttons.append([InlineKeyboardButton("↩️ Назад", callback_data="field_edit_cancel")])
-    return InlineKeyboardMarkup(buttons)
-
-
-def get_size_selection_keyboard() -> InlineKeyboardMarkup:
-    """Клавиатура для выбора размера без ручного ввода."""
-    buttons = [
-        [
-            InlineKeyboardButton("XS", callback_data="size_XS"),
-            InlineKeyboardButton("S", callback_data="size_S"),
-            InlineKeyboardButton("M", callback_data="size_M"),
-        ],
-        [
-            InlineKeyboardButton("L", callback_data="size_L"),
-            InlineKeyboardButton("XL", callback_data="size_XL"),
-            InlineKeyboardButton("XXL", callback_data="size_XXL"),
-        ],
-        [InlineKeyboardButton("3XL", callback_data="size_3XL")],
-        [InlineKeyboardButton("↩️ Назад", callback_data="field_edit_cancel")],
-    ]
-    return InlineKeyboardMarkup(buttons)
-
-
-def get_gender_selection_keyboard_simple() -> InlineKeyboardMarkup:
-    """Keyboard for gender selection without manual input."""
-    buttons = [
-        [InlineKeyboardButton("\U0001f468 Мужской", callback_data="gender_M")],
-        [InlineKeyboardButton("\U0001f469 Женский", callback_data="gender_F")],
-        [InlineKeyboardButton("↩️ Назад", callback_data="field_edit_cancel")],
-    ]
-    return InlineKeyboardMarkup(buttons)
-
-
-def get_department_selection_keyboard() -> InlineKeyboardMarkup:
-    """Клавиатура для выбора департамента."""
-    buttons = []
-    dept_items = list(DEPARTMENT_DISPLAY.items())
-    for i in range(0, len(dept_items), 2):
-        row = []
-        for j in range(i, min(i + 2, len(dept_items))):
-            key, display_name = dept_items[j]
-            row.append(InlineKeyboardButton(display_name, callback_data=f"dept_{key}"))
-        buttons.append(row)
-
-    # Кнопка ручного ввода удалена
-    buttons.append([InlineKeyboardButton("↩️ Назад", callback_data="field_edit_cancel")])
-    return InlineKeyboardMarkup(buttons)
-
-
-def get_edit_keyboard(participant_data: Dict) -> InlineKeyboardMarkup:
-    """Создает клавиатуру с кнопками для редактирования полей."""
-    buttons = [
-        [InlineKeyboardButton("✅ Сохранить", callback_data="confirm_save")],
-        [
-            InlineKeyboardButton("👤 Имя (рус)", callback_data="edit_FullNameRU"),
-            InlineKeyboardButton("🌍 Имя (англ)", callback_data="edit_FullNameEN"),
-        ],
-        [
-            InlineKeyboardButton("⚥ Пол", callback_data="edit_Gender"),
-            InlineKeyboardButton("👕 Размер", callback_data="edit_Size"),
-        ],
-        [
-            InlineKeyboardButton("⛪ Церковь", callback_data="edit_Church"),
-            InlineKeyboardButton("🏙️ Город", callback_data="edit_CountryAndCity"),
-        ],
-    ]
-
-    role = participant_data.get("Role")
-    if role == "CANDIDATE":
-        buttons.append([InlineKeyboardButton("👥 Роль", callback_data="edit_Role")])
-    else:
-        buttons.append(
-            [
-                InlineKeyboardButton("👥 Роль", callback_data="edit_Role"),
-                InlineKeyboardButton("🏢 Департамент", callback_data="edit_Department"),
-            ]
-        )
-
-    buttons.append(
-        [
-            InlineKeyboardButton("👨‍💼 Кто подал", callback_data="edit_SubmittedBy"),
-            InlineKeyboardButton(
-                "📞 Контакты", callback_data="edit_ContactInformation"
-            ),
-        ]
-    )
-
-    buttons.append([InlineKeyboardButton("❌ Отмена", callback_data="main_cancel")])
-    return InlineKeyboardMarkup(buttons)
+    """Proxy to new message formatter for backward compatibility."""
+    return MessageFormatter.format_participant_info(data)
 
 
 def detect_changes(old: Dict, new: Dict) -> List[str]:
@@ -584,7 +414,10 @@ class ParticipantService:
         return self.repository.get_all()
 
     def delete_participant(
-        self, participant_id: Union[int, str], user_id: Optional[int] = None, reason: str = ""
+        self,
+        participant_id: Union[int, str],
+        user_id: Optional[int] = None,
+        reason: str = "",
     ) -> bool:
         """Delete participant and log reason."""
         start = time.time()
@@ -721,9 +554,7 @@ class ParticipantService:
                             participant=p,
                             confidence=en_conf,
                             match_field="name_en",
-                            match_type="fuzzy"
-                            if fuzzy_available
-                            else "partial",
+                            match_type="fuzzy" if fuzzy_available else "partial",
                         )
                     )
 
