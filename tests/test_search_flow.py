@@ -2,7 +2,8 @@ import unittest
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from main import handle_search_callback, cancel_callback, SEARCHING_PARTICIPANTS
+from presentation.handlers.callback_handlers import SearchCallbackHandler
+from main import cancel_callback, SEARCHING_PARTICIPANTS
 
 
 class SearchFlowTestCase(unittest.IsolatedAsyncioTestCase):
@@ -17,7 +18,8 @@ class SearchFlowTestCase(unittest.IsolatedAsyncioTestCase):
             return SEARCHING_PARTICIPANTS
 
         with patch(
-            "main._show_search_prompt", side_effect=mock_show_search_prompt
+            "presentation.handlers.callback_handlers._show_search_prompt",
+            side_effect=mock_show_search_prompt,
         ), patch("main.user_logger"), patch(
             "main._cleanup_messages", new=AsyncMock()
         ), patch(
@@ -29,7 +31,11 @@ class SearchFlowTestCase(unittest.IsolatedAsyncioTestCase):
         ), patch(
             "utils.decorators.COORDINATOR_IDS", []
         ):
-            state = await handle_search_callback(update, context)
+            container = SimpleNamespace(
+                logger=lambda: MagicMock(), user_logger=lambda: MagicMock()
+            )
+            handler = SearchCallbackHandler(container)
+            state = await handler.handle(update, context)
             self.assertEqual(state, SEARCHING_PARTICIPANTS)
             self.assertIn("current_state", context.user_data)
 
@@ -49,7 +55,8 @@ class SearchFlowTestCase(unittest.IsolatedAsyncioTestCase):
             update2 = SimpleNamespace(
                 callback_query=MagicMock(), effective_user=SimpleNamespace(id=1)
             )
-            state2 = await handle_search_callback(update2, context)
+            handler2 = SearchCallbackHandler(container)
+            state2 = await handler2.handle(update2, context)
             self.assertEqual(state2, SEARCHING_PARTICIPANTS)
             self.assertIn("current_state", context.user_data)
 

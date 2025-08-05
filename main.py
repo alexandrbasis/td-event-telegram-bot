@@ -102,6 +102,16 @@ BOT_VERSION = "0.1"
 def create_handlers(container):
     return {
         "start": container.start_handler(),
+        "add": container.add_handler(),
+        "help": container.help_handler(),
+        "list": container.list_handler(),
+        "search": container.search_handler(),
+        "cancel": container.cancel_handler(),
+        "add_callback": container.add_callback_handler(),
+        "search_callback": container.search_callback_handler(),
+        "main_menu_callback": container.main_menu_callback_handler(),
+        "save_confirmation_callback": container.save_confirmation_callback_handler(),
+        "duplicate_callback": container.duplicate_callback_handler(),
     }
 
 
@@ -1035,163 +1045,8 @@ async def _show_main_menu(
 
 
 # Команда /start
-@require_role("viewer")
-async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Entry point that shows the main menu."""
-    user_id = update.effective_user.id
-    if detect_interrupted_session(update, context):
-        await handle_session_recovery(update, context)
-        return
-
-    _log_session_end(context, user_id)
-    context.user_data["session_start"] = datetime.utcnow()
-    user_logger.log_user_action(user_id, "command_start", {"command": "/start"})
-    _record_action(context, "/start:start")
-
-    logger.info("User %s started /start", user_id)
-    await _cleanup_messages(context, update.effective_chat.id)
-    await _show_main_menu(update, context)
-    user_logger.log_user_action(user_id, "command_end", {"command": "/start"})
 
 
-@require_role("coordinator")
-async def handle_add_callback(
-    update: Update, context: ContextTypes.DEFAULT_TYPE
-) -> int:
-    """Starts the add flow from the main menu button."""
-    query = update.callback_query
-    await query.answer()
-    await query.edit_message_reply_markup(reply_markup=None)
-
-    context.user_data["add_flow_data"] = {
-        "FullNameRU": None,
-        "Gender": None,
-        "Size": None,
-        "Church": None,
-        "Role": None,
-        "Department": None,
-        "FullNameEN": None,
-        "CountryAndCity": None,
-        "SubmittedBy": None,
-        "ContactInformation": None,
-    }
-
-    cancel_markup = InlineKeyboardMarkup(
-        [[InlineKeyboardButton("❌ Отмена", callback_data="main_cancel")]]
-    )
-
-    msg1 = await query.message.reply_text(
-        "🚀 **Начинаем добавлять нового участника.**\n\n"
-        "Отправьте данные любым удобным способом:\n"
-        "1️⃣ **Вставьте заполненный шаблон** (пришлю его следующим сообщением).\n"
-        "2️⃣ **Отправьте несколько полей**, разделяя их запятой (`,`) или каждое с новой строкой.\n"
-        "3️⃣ **Отправляйте по одному полю** в сообщении (например, `Церковь Грейс`).\n\n"
-        "*Для самой точной обработки используйте запятые или ввод с новой строки.*\n"
-        "Для отмены введите /cancel.",
-        parse_mode="Markdown",
-        reply_markup=cancel_markup,
-    )
-    msg2 = await query.message.reply_text(MESSAGES["ADD_TEMPLATE"])
-    _add_message_to_cleanup(context, msg1.message_id)
-    _add_message_to_cleanup(context, msg2.message_id)
-    _add_message_to_cleanup(context, query.message.message_id)
-    context.user_data["current_state"] = COLLECTING_DATA
-    return COLLECTING_DATA
-
-
-@require_role("viewer")
-async def handle_main_menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Обрабатывает нажатия на кнопки главного меню."""
-    query = update.callback_query
-    await query.answer()
-    data = query.data
-    user_id = update.effective_user.id
-    user_logger.log_user_action(user_id, "menu_action", {"action": data})
-
-    await query.edit_message_reply_markup(reply_markup=None)
-
-    if data == "main_cancel":
-        return await cancel_callback(update, context)
-
-    if data == "main_menu":
-        await _show_main_menu(update, context, is_return=True)
-        return
-
-    # main_list mirrors the /list command
-    if data == "main_list":
-        participants = participant_service.get_all_participants()
-        if not participants:
-            empty_keyboard = InlineKeyboardMarkup(
-                [
-                    [
-                        InlineKeyboardButton(
-                            "➕ Добавить участника", callback_data="main_add"
-                        )
-                    ],
-                    [
-                        InlineKeyboardButton(
-                            "🏠 Главное меню", callback_data="main_menu"
-                        )
-                    ],
-                ]
-            )
-
-            await query.message.reply_text(
-                "📋 **Список участников пуст**\n\nДобавьте первого участника:",
-                parse_mode="Markdown",
-                reply_markup=empty_keyboard,
-            )
-            return
-
-        message = f"📋 **Список участников ({len(participants)} чел.):**\n\n"
-        for p in participants:
-            role_emoji = "👤" if p.Role == "CANDIDATE" else "👨‍💼"
-            department = (
-                f" ({p.Department})" if p.Role == "TEAM" and p.Department else ""
-            )
-            message += f"{role_emoji} **{p.FullNameRU}**\n"
-            message += f"   • Роль: {p.Role}{department}\n"
-            message += f"   • ID: {p.id}\n\n"
-
-        await _send_response_with_menu_button(update, message)
-        return
-
-    # main_export mirrors the /export command
-    if data == "main_export":
-        await _send_response_with_menu_button(
-            update,
-            "📤 **Экспорт данных** (заглушка)\n\n"
-            "🔧 Функция в разработке.\n"
-            "Пример: /export worship team - экспорт участников worship команды",
-        )
-        return
-
-    # main_help mirrors the /help command
-    if data == "main_help":
-        help_text = """
-📖 **Справка по командам:**
-
-👥 **Управление участниками:**
-/add - Добавить нового участника
-/edit - Редактировать данные участника
-/delete - Удалить участника
-
-📊 **Просмотр данных:**
-/list - Показать список участников
-/export - Экспорт данных в CSV
-
-❓ **Помощь:**
-/help - Показать эту справку
-/start - Главное меню
-/cancel - Отменить текущую операцию
-
-🔍 **Примеры запросов (скоро):**
-"Сколько team-member в worship?"
-"Кто живет в комнате 203A?"
-        """
-
-        await _send_response_with_menu_button(update, help_text)
-        return
 
 
 # --- SEARCH HANDLERS ---
@@ -1233,38 +1088,6 @@ async def _show_search_prompt(
     return SEARCHING_PARTICIPANTS
 
 
-@require_role("viewer")
-async def search_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Инициация поиска участников через команду /search."""
-    user_id = update.effective_user.id
-    if detect_interrupted_session(update, context):
-        await handle_session_recovery(update, context)
-        return
-
-    user_logger.log_user_action(user_id, "command_start", {"command": "/search"})
-    _record_action(context, "/search:start")
-    return await _show_search_prompt(update, context, is_callback=False)
-
-
-@require_role("viewer")
-async def handle_search_callback(
-    update: Update, context: ContextTypes.DEFAULT_TYPE
-) -> int:
-    """Обработчик кнопки поиска из главного меню."""
-    user_id = update.effective_user.id
-
-    logger.info(f"🔍 handle_search_callback called for user {user_id}")
-    logger.debug(f"user_data before search: {list(context.user_data.keys())}")
-
-    if context.user_data:
-        logger.warning(
-            f"Found existing user_data during search start: {list(context.user_data.keys())}"
-        )
-        context.user_data.clear()
-
-    user_logger.log_user_action(user_id, "search_callback_triggered", {})
-
-    return await _show_search_prompt(update, context, is_callback=True)
 
 
 def sanitize_search_query(query: str) -> str:
@@ -1641,99 +1464,6 @@ def get_participant_actions_keyboard(
     return InlineKeyboardMarkup(buttons)
 
 
-# Equivalent to the main_help callback handler
-# Команда /help
-@require_role("viewer")
-async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
-    if detect_interrupted_session(update, context):
-        await handle_session_recovery(update, context)
-        return
-
-    user_logger.log_user_action(user_id, "command_start", {"command": "/help"})
-    _record_action(context, "/help:start")
-    role = get_user_role(user_id)
-    logger.info("User %s requested help", user_id)
-
-    help_text = """
-📖 **Справка по командам:**
-
-👥 **Управление участниками:**
-/add - Добавить нового участника
-/edit - Редактировать данные участника
-/delete - Удалить участника
-
-📊 **Просмотр данных:**
-/list - Показать список участников
-/export - Экспорт данных в CSV
-
-❓ **Помощь:**
-/help - Показать эту справку
-/start - Главное меню
-/cancel - Отменить текущую операцию
-
-🔍 **Примеры запросов (скоро):**
-"Сколько team-member в worship?"
-"Кто живет в комнате 203A?"
-    """
-
-    await _send_response_with_menu_button(update, help_text)
-    user_logger.log_user_action(user_id, "command_end", {"command": "/help"})
-
-
-# Команда /add
-@require_role("coordinator")
-@cleanup_on_error
-async def add_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Starts the /add flow and initializes the session."""
-    user_id = update.effective_user.id
-    if detect_interrupted_session(update, context):
-        await handle_session_recovery(update, context)
-        return
-
-    user_logger.log_user_action(user_id, "command_start", {"command": "/add"})
-    _record_action(context, "/add:start")
-
-    context.user_data["add_flow_data"] = {
-        "FullNameRU": None,
-        "Gender": None,
-        "Size": None,
-        "Church": None,
-        "Role": None,
-        "Department": None,
-        "FullNameEN": None,
-        "CountryAndCity": None,
-        "SubmittedBy": None,
-        "ContactInformation": None,
-    }
-
-    cancel_markup = InlineKeyboardMarkup(
-        [[InlineKeyboardButton("❌ Отмена", callback_data="main_cancel")]]
-    )
-
-    msg1 = await update.message.reply_text(
-        "🚀 **Начинаем добавлять нового участника.**\n\n"
-        "Отправьте данные любым удобным способом:\n"
-        "1️⃣ **Вставьте заполненный шаблон** (пришлю его следующим сообщением).\n"
-        "2️⃣ **Отправьте несколько полей**, разделяя их запятой (`,`) или каждое с новой строки.\n"
-        "3️⃣ **Отправляйте по одному полю** в сообщении (например, `Церковь Грейс`).\n\n"
-        "*Для самой точной обработки используйте запятые или ввод с новой строки.*\n"
-        "Для отмены введите /cancel.",
-        parse_mode="Markdown",
-        reply_markup=cancel_markup,
-    )
-    msg2 = await update.message.reply_text(MESSAGES["ADD_TEMPLATE"])
-    _add_message_to_cleanup(context, msg1.message_id)
-    _add_message_to_cleanup(context, msg2.message_id)
-    _add_message_to_cleanup(context, update.message.message_id)
-    context.user_data["current_state"] = COLLECTING_DATA
-    user_logger.log_state_transition(user_id, "START", str(COLLECTING_DATA), {})
-    return COLLECTING_DATA
-
-
-@require_role("coordinator")
-@smart_cleanup_on_error
-@log_state_transitions
 async def handle_partial_data(
     update: Update, context: ContextTypes.DEFAULT_TYPE
 ) -> int:
@@ -1964,61 +1694,6 @@ async def edit_field_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
         await update.message.reply_text("❌ Произошла ошибка при обновлении поля")
 
 
-# Команда /list
-# Equivalent to the main_list callback handler
-@require_role("viewer")
-async def list_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
-    if detect_interrupted_session(update, context):
-        await handle_session_recovery(update, context)
-        return
-
-    role = get_user_role(user_id)
-    user_logger.log_user_action(user_id, "command_start", {"command": "/list"})
-    _record_action(context, "/list:start")
-
-    # ✅ ИСПРАВЛЕНИЕ: используем новый service для получения списка
-    participants = participant_service.get_all_participants()
-
-    if not participants:
-        empty_keyboard = InlineKeyboardMarkup(
-            [
-                [
-                    InlineKeyboardButton(
-                        "➕ Добавить участника", callback_data="main_add"
-                    )
-                ],
-                [InlineKeyboardButton("🏠 Главное меню", callback_data="main_menu")],
-            ]
-        )
-
-        await update.message.reply_text(
-            "📋 **Список участников пуст**\n\nДобавьте первого участника:",
-            parse_mode="Markdown",
-            reply_markup=empty_keyboard,
-        )
-        user_logger.log_user_action(
-            user_id, "command_end", {"command": "/list", "count": 0}
-        )
-        return
-
-    # Формируем список участников
-    message = f"📋 **Список участников ({len(participants)} чел.):**\n\n"
-    user_logger.log_user_action(
-        user_id, "command_end", {"command": "/list", "count": len(participants)}
-    )
-
-    for p in participants:
-        role_emoji = "👤" if p.Role == "CANDIDATE" else "👨‍💼"
-        department = f" ({p.Department})" if p.Role == "TEAM" and p.Department else ""
-
-        message += f"{role_emoji} **{p.FullNameRU}**\n"
-        message += f"   • Роль: {p.Role}{department}\n"
-        message += f"   • ID: {p.id}\n\n"
-
-    await _send_response_with_menu_button(update, message)
-
-
 # Команда /export
 # Equivalent to the main_export callback handler
 @require_role("viewer")
@@ -2042,29 +1717,6 @@ async def export_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "Пример: /export worship team - экспорт участников worship команды",
     )
     user_logger.log_user_action(user_id, "command_end", {"command": "/export"})
-
-
-# Команда /cancel
-@require_role("viewer")
-async def cancel_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    user_id = update.effective_user.id
-    if detect_interrupted_session(update, context):
-        await handle_session_recovery(update, context)
-        return
-
-    user_logger.log_user_action(user_id, "command_start", {"command": "/cancel"})
-    _record_action(context, "/cancel:start")
-    _log_session_end(context, user_id)
-    if context.user_data:
-        context.user_data.clear()
-        logger.info("User %s cancelled the add flow.", user_id)
-    else:
-        logger.info("User %s cancelled a non-existent operation.", user_id)
-
-    await _cleanup_messages(context, update.effective_chat.id)
-    await _show_main_menu(update, context, is_return=True)
-    user_logger.log_user_action(user_id, "command_end", {"command": "/cancel"})
-    return ConversationHandler.END
 
 
 async def cancel_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -2206,122 +1858,6 @@ async def process_participant_confirmation(
 @require_role("coordinator")
 @smart_cleanup_on_error
 @log_state_transitions
-async def handle_save_confirmation(
-    update: Update, context: ContextTypes.DEFAULT_TYPE
-) -> int:
-    """Handles the final confirmation via the 'Save' button."""
-    query = update.callback_query
-    user_id = update.effective_user.id
-
-    logger.info(f"Save confirmation requested by user {user_id}")
-    logger.debug(f"callback_data: {query.data}")
-    logger.debug(f"user_data keys: {list(context.user_data.keys())}")
-
-    await query.answer()
-    await _cleanup_messages(context, update.effective_chat.id)
-
-    participant_data = context.user_data.get("parsed_participant", {})
-    if not participant_data:
-        await query.message.reply_text(
-            "❌ Не удалось найти данные для сохранения. Попробуйте снова."
-        )
-        cleanup_user_data_safe(context, update.effective_user.id)
-        return ConversationHandler.END
-
-    is_update = "participant_id" in context.user_data
-
-    # Проверка на дубликат (только при создании нового)
-    if not is_update:
-        existing = participant_service.check_duplicate(
-            participant_data.get("FullNameRU"), user_id=user_id
-        )
-        if existing:
-            context.user_data["existing_participant_id"] = existing.get("id")
-            message = "⚠️ **Найден дубликат!**\n\n"
-            message += format_participant_block(existing)
-            message += "\n\nЧто делаем?"
-            await query.message.reply_text(
-                message,
-                parse_mode="Markdown",
-                reply_markup=get_duplicate_keyboard(),
-            )
-            return CONFIRMING_DUPLICATE
-
-    # Сохранение или обновление
-    try:
-        if is_update:
-            participant_id = context.user_data["participant_id"]
-            participant_service.update_participant(
-                participant_id, participant_data, user_id=user_id
-            )
-            user_logger.log_participant_operation(
-                user_id, "update", participant_data, participant_id
-            )
-            user_logger.log_user_action(
-                user_id,
-                "command_end",
-                {
-                    "command": "/add",
-                    "participant_id": participant_id,
-                    "result": "updated",
-                },
-            )
-            updated_participant = participant_service.get_participant(participant_id)
-            if updated_participant:
-                full_info = format_participant_full_info(asdict(updated_participant))
-                success_message = f"✅ **Участник обновлен!**\n\n{full_info}"
-            else:
-                success_message = (
-                    f"✅ **Участник {participant_data['FullNameRU']} (ID: {participant_id})"
-                    " успешно обновлен!**"
-                )
-        else:
-            new_participant = participant_service.add_participant(
-                participant_data, user_id=user_id
-            )
-            user_logger.log_participant_operation(
-                user_id, "add", participant_data, new_participant.id
-            )
-            user_logger.log_user_action(
-                user_id,
-                "command_end",
-                {
-                    "command": "/add",
-                    "participant_id": new_participant.id,
-                    "result": "added",
-                },
-            )
-            full_info = format_participant_full_info(asdict(new_participant))
-            success_message = f"✅ **Участник добавлен!**\n\n{full_info}"
-
-        keyboard = InlineKeyboardMarkup(
-            [
-                [
-                    InlineKeyboardButton(
-                        "✏️ Редактировать",
-                        callback_data=(
-                            f"edit_participant_{new_participant.id}"
-                            if not is_update
-                            else f"edit_participant_{participant_id}"
-                        ),
-                    ),
-                    InlineKeyboardButton("➕ Добавить еще", callback_data="main_add"),
-                ],
-                [InlineKeyboardButton("🏠 Главное меню", callback_data="main_menu")],
-            ]
-        )
-
-        await query.message.reply_text(
-            success_message,
-            parse_mode="Markdown",
-            reply_markup=keyboard,
-        )
-    except (DatabaseError, BotException, ValidationError) as e:
-        logger.error("Error during save confirmation: %s", e)
-        await query.message.reply_text(f"❌ Произошла ошибка: {e}")
-
-    cleanup_user_data_safe(context, update.effective_user.id)
-    return ConversationHandler.END
 
 
 # ✅ ДОБАВИТЬ: Новая функция форматирования
@@ -2708,108 +2244,6 @@ async def handle_recover_input(
 
 @smart_cleanup_on_error
 @log_state_transitions
-async def handle_duplicate_callback(
-    update: Update, context: ContextTypes.DEFAULT_TYPE
-) -> int:
-    """Handles duplicate confirmation buttons."""
-    query = update.callback_query
-    await query.answer()
-
-    action = query.data
-    participant_data = context.user_data.get("parsed_participant", {})
-    user_id = update.effective_user.id if update.effective_user else 0
-
-    if action == "dup_add_new":
-        try:
-            new_participant = participant_service.add_participant(
-                participant_data, user_id=user_id
-            )
-            user_logger.log_participant_operation(
-                user_id, "add", participant_data, new_participant.id
-            )
-            user_logger.log_user_action(
-                user_id,
-                "command_end",
-                {
-                    "command": "/add",
-                    "participant_id": new_participant.id,
-                    "result": "added_duplicate",
-                },
-            )
-        except ValidationError as e:
-            await query.message.reply_text(f"❌ Ошибка валидации: {e}")
-            return ConversationHandler.END
-        except ParticipantNotFoundError as e:  # unlikely here
-            await query.message.reply_text(str(e))
-            return ConversationHandler.END
-        except (DatabaseError, BotException) as e:
-            logger.error("Error adding participant: %s", e)
-            await query.message.reply_text(
-                "❌ Ошибка базы данных при добавлении участника."
-            )
-            return ConversationHandler.END
-        cleanup_user_data_safe(context, update.effective_user.id)
-
-        await query.message.reply_text(
-            f"✅ **Участник добавлен как новый (возможен дубль)**\n\n"
-            f"🆔 ID: {new_participant.id}\n"
-            f"👤 Имя: {participant_data['FullNameRU']}\n\n"
-            f"⚠️ Обратите внимание на возможное дублирование!",
-            parse_mode="Markdown",
-            reply_markup=get_post_action_keyboard(),
-        )
-
-    elif action == "dup_replace":
-        existing = participant_service.check_duplicate(
-            participant_data["FullNameRU"], user_id=user_id
-        )
-        if existing:
-            try:
-                updated = participant_service.update_participant(
-                    existing.id, participant_data, user_id=user_id
-                )
-                user_logger.log_participant_operation(
-                    user_id, "update", participant_data, existing.id
-                )
-                user_logger.log_user_action(
-                    user_id,
-                    "command_end",
-                    {
-                        "command": "/add",
-                        "participant_id": existing.id,
-                        "result": "updated_duplicate",
-                    },
-                )
-            except ValidationError as e:
-                await query.message.reply_text(f"❌ Ошибка валидации: {e}")
-                return ConversationHandler.END
-            except ParticipantNotFoundError as e:
-                await query.message.reply_text(str(e))
-                return ConversationHandler.END
-            except (DatabaseError, BotException) as e:
-                logger.error("Error updating participant: %s", e)
-                await query.message.reply_text(
-                    "❌ Ошибка базы данных при обновлении участника."
-                )
-                return ConversationHandler.END
-            cleanup_user_data_safe(context, update.effective_user.id)
-
-            if updated:
-                await query.message.reply_text(
-                    f"🔄 **Участник обновлен!**\n\n"
-                    f"🆔 ID: {existing.id}\n"
-                    f"👤 Имя: {participant_data['FullNameRU']}\n"
-                    f"👥 Роль: {participant_data['Role']}\n\n"
-                    f"📋 Данные заменены новыми значениями",
-                    parse_mode="Markdown",
-                    reply_markup=get_post_action_keyboard(),
-                )
-            else:
-                await query.message.reply_text("❌ Ошибка обновления участника.")
-        else:
-            await query.message.reply_text("❌ Существующий участник не найден.")
-
-    return ConversationHandler.END
 
 
 # Обработка ошибок
@@ -2901,8 +2335,11 @@ def main():
 
     search_conv = ConversationHandler(
         entry_points=[
-            CommandHandler("search", search_command),
-            CallbackQueryHandler(handle_search_callback, pattern="^main_search$"),
+            CommandHandler("search", handlers["search"].handle_with_logging),
+            CallbackQueryHandler(
+                handlers["search_callback"].handle_with_logging,
+                pattern="^main_search$",
+            ),
         ],
         states={
             SEARCHING_PARTICIPANTS: [
@@ -2926,18 +2363,27 @@ def main():
             ],
         },
         fallbacks=[
-            CommandHandler("cancel", cancel_command),
+            CommandHandler("cancel", handlers["cancel"].handle_with_logging),
             CallbackQueryHandler(cancel_callback, pattern="^main_cancel$"),
-            CallbackQueryHandler(handle_main_menu_callback, pattern="^main_menu$"),
-            CallbackQueryHandler(handle_main_menu_callback, pattern="^search_new$"),
+            CallbackQueryHandler(
+                handlers["main_menu_callback"].handle_with_logging,
+                pattern="^main_menu$",
+            ),
+            CallbackQueryHandler(
+                handlers["main_menu_callback"].handle_with_logging,
+                pattern="^search_new$",
+            ),
         ],
         per_chat=True,
     )
 
     add_conv = ConversationHandler(
         entry_points=[
-            CommandHandler("add", add_command),
-            CallbackQueryHandler(handle_add_callback, pattern="^main_add$"),
+            CommandHandler("add", handlers["add"].handle_with_logging),
+            CallbackQueryHandler(
+                handlers["add_callback"].handle_with_logging,
+                pattern="^main_add$",
+            ),
         ],
         states={
             COLLECTING_DATA: [
@@ -2953,7 +2399,8 @@ def main():
             ],
             CONFIRMING_DATA: [
                 CallbackQueryHandler(
-                    handle_save_confirmation, pattern="^confirm_save$"
+                    handlers["save_confirmation_callback"].handle_with_logging,
+                    pattern="^confirm_save$",
                 ),
                 CallbackQueryHandler(
                     handle_enum_selection,
@@ -2971,18 +2418,24 @@ def main():
                 ),
             ],
             CONFIRMING_DUPLICATE: [
-                CallbackQueryHandler(handle_duplicate_callback, pattern="^dup_"),
+                CallbackQueryHandler(
+                    handlers["duplicate_callback"].handle_with_logging,
+                    pattern="^dup_",
+                ),
             ],
             RECOVERING: [
                 CallbackQueryHandler(
                     handle_recover_confirmation, pattern="^recover_confirmation$"
                 ),
                 CallbackQueryHandler(handle_recover_input, pattern="^recover_input$"),
-                CallbackQueryHandler(handle_add_callback, pattern="^main_add$"),
+                CallbackQueryHandler(
+                    handlers["add_callback"].handle_with_logging,
+                    pattern="^main_add$",
+                ),
             ],
         },
         fallbacks=[
-            CommandHandler("cancel", cancel_command),
+            CommandHandler("cancel", handlers["cancel"].handle_with_logging),
             CallbackQueryHandler(cancel_callback, pattern="^main_cancel$"),
         ],
         per_chat=True,
@@ -2995,18 +2448,25 @@ def main():
     application.add_handler(
         CommandHandler("start", handlers["start"].handle_with_logging)
     )
-    application.add_handler(CommandHandler("help", help_command))
+    application.add_handler(
+        CommandHandler("help", handlers["help"].handle_with_logging)
+    )
     application.add_handler(
         CallbackQueryHandler(
-            handle_main_menu_callback, pattern="^main_(list|export|help|menu|cancel)$"
+            handlers["main_menu_callback"].handle_with_logging,
+            pattern="^main_(list|export|help|menu|cancel)$",
         )
     )
     application.add_handler(CommandHandler("edit", edit_command))
     application.add_handler(CommandHandler("edit_field", edit_field_command))
     application.add_handler(CommandHandler("delete", delete_command))
-    application.add_handler(CommandHandler("list", list_command))
+    application.add_handler(
+        CommandHandler("list", handlers["list"].handle_with_logging)
+    )
     application.add_handler(CommandHandler("export", export_command))
-    application.add_handler(CommandHandler("cancel", cancel_command))
+    application.add_handler(
+        CommandHandler("cancel", handlers["cancel"].handle_with_logging)
+    )
     application.add_handler(
         CallbackQueryHandler(
             handle_edit_participant_callback, pattern="^edit_participant_"

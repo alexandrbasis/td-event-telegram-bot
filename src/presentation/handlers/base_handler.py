@@ -7,6 +7,14 @@ class BaseHandler(ABC):
     def __init__(self, container):
         self.container = container
         self.logger = container.logger() if hasattr(container, "logger") else None
+        self.user_logger = (
+            container.user_logger() if hasattr(container, "user_logger") else None
+        )
+        self.participant_service = (
+            container.legacy_participant_service()
+            if hasattr(container, "legacy_participant_service")
+            else None
+        )
 
     @abstractmethod
     async def handle(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
