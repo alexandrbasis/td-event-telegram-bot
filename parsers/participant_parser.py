@@ -128,9 +128,18 @@ try:
     import Levenshtein
 
     FUZZY_MATCHING_AVAILABLE = True
+    FUZZY_LIB = "levenshtein"
 except ImportError:  # pragma: no cover - optional dependency
-    FUZZY_MATCHING_AVAILABLE = False
-    logger.warning("Levenshtein not available, fuzzy matching disabled")
+    try:
+        from rapidfuzz import fuzz
+
+        FUZZY_MATCHING_AVAILABLE = True
+        FUZZY_LIB = "rapidfuzz"
+        logger.info("Using rapidfuzz for fuzzy matching")
+    except ImportError:  # pragma: no cover - optional dependency
+        FUZZY_MATCHING_AVAILABLE = False
+        FUZZY_LIB = None
+        logger.warning("No fuzzy matching library available")
 
 
 class FuzzyMatcher:
@@ -147,18 +156,25 @@ class FuzzyMatcher:
 
             if str1_lower == str2_lower:
                 return 1.0
-            elif str1_lower in str2_lower or str2_lower in str1_lower:
+            if str1_lower in str2_lower or str2_lower in str1_lower:
                 return 0.8
-            else:
-                return 0.0
+            return 0.0
 
-        max_len = max(len(str1), len(str2))
-        if max_len == 0:
-            return 1.0
+        str1_lower = str1.lower()
+        str2_lower = str2.lower()
 
-        distance = Levenshtein.distance(str1.lower(), str2.lower())
-        similarity = 1.0 - (distance / max_len)
-        return similarity
+        if FUZZY_LIB == "levenshtein":
+            max_len = max(len(str1_lower), len(str2_lower))
+            if max_len == 0:
+                return 1.0
+
+            distance = Levenshtein.distance(str1_lower, str2_lower)
+            return 1.0 - (distance / max_len)
+
+        if FUZZY_LIB == "rapidfuzz":
+            return fuzz.ratio(str1_lower, str2_lower) / 100.0
+
+        return 0.0
 
     def find_best_church_match(
         self, token: str, churches: List[str]
