@@ -2617,7 +2617,6 @@ def main():
             CallbackQueryHandler(cancel_callback, pattern="^main_cancel$"),
             CallbackQueryHandler(handle_main_menu_callback, pattern="^main_menu$"),
         ],
-        per_message=True,
         per_chat=True,
     )
 
@@ -2672,7 +2671,6 @@ def main():
             CommandHandler("cancel", cancel_command),
             CallbackQueryHandler(cancel_callback, pattern="^main_cancel$"),
         ],
-        per_message=True,
         per_chat=True,
     )
     # ConversationHandler должен быть зарегистрирован первым
