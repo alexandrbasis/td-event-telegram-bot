@@ -6,6 +6,7 @@ class Container(containers.DeclarativeContainer):
     # Start with basic dependencies
     config = providers.Configuration()
     logger = providers.Singleton(logging.getLogger, "bot")
+    user_logger = providers.Singleton("utils.user_logger.UserActionLogger")
 
     # Keep existing components working
     legacy_participant_service = providers.Singleton(
@@ -47,5 +48,46 @@ class Container(containers.DeclarativeContainer):
     # Handlers
     start_handler = providers.Factory(
         "presentation.handlers.command_handlers.StartCommandHandler",
+        container=providers.Self(),
+    )
+    add_handler = providers.Factory(
+        "presentation.handlers.command_handlers.AddCommandHandler",
+        container=providers.Self(),
+    )
+    help_handler = providers.Factory(
+        "presentation.handlers.command_handlers.HelpCommandHandler",
+        container=providers.Self(),
+    )
+    list_handler = providers.Factory(
+        "presentation.handlers.command_handlers.ListCommandHandler",
+        container=providers.Self(),
+    )
+    search_handler = providers.Factory(
+        "presentation.handlers.command_handlers.SearchCommandHandler",
+        container=providers.Self(),
+    )
+    cancel_handler = providers.Factory(
+        "presentation.handlers.command_handlers.CancelCommandHandler",
+        container=providers.Self(),
+    )
+
+    add_callback_handler = providers.Factory(
+        "presentation.handlers.callback_handlers.AddCallbackHandler",
+        container=providers.Self(),
+    )
+    search_callback_handler = providers.Factory(
+        "presentation.handlers.callback_handlers.SearchCallbackHandler",
+        container=providers.Self(),
+    )
+    main_menu_callback_handler = providers.Factory(
+        "presentation.handlers.callback_handlers.MainMenuCallbackHandler",
+        container=providers.Self(),
+    )
+    save_confirmation_callback_handler = providers.Factory(
+        "presentation.handlers.callback_handlers.SaveConfirmationCallbackHandler",
+        container=providers.Self(),
+    )
+    duplicate_callback_handler = providers.Factory(
+        "presentation.handlers.callback_handlers.DuplicateCallbackHandler",
         container=providers.Self(),
     )
