@@ -25,6 +25,7 @@ from utils.decorators import require_role
 from utils.cache import load_reference_data
 from utils.timeouts import set_edit_timeout, clear_expired_edit
 from utils.user_logger import UserActionLogger
+from utils.session_recovery import detect_interrupted_session, handle_session_recovery
 from database import init_database
 from repositories.participant_repository import SqliteParticipantRepository
 from repositories.airtable_participant_repository import AirtableParticipantRepository
@@ -992,9 +993,7 @@ async def _show_main_menu(
                     context.chat_data.pop(key, None)
 
     if is_return:
-        welcome_text = (
-            "✅ **Операция завершена.**\n\n" "Чем еще я могу для вас сделать?"
-        )
+        welcome_text = "✅ **Операция завершена.**\n\n" "Чем еще могу вам помочь?"
     else:
         welcome_text = (
             "🏕️ **Добро пожаловать в бот Tres Dias Israel!**\n\n"
@@ -1029,6 +1028,10 @@ async def _show_main_menu(
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Entry point that shows the main menu."""
     user_id = update.effective_user.id
+    if detect_interrupted_session(update, context):
+        await handle_session_recovery(update, context)
+        return
+
     _log_session_end(context, user_id)
     context.user_data["session_start"] = datetime.utcnow()
     user_logger.log_user_action(user_id, "command_start", {"command": "/start"})
@@ -1222,8 +1225,11 @@ async def _show_search_prompt(
 @require_role("viewer")
 async def search_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Инициация поиска участников через команду /search."""
-
     user_id = update.effective_user.id
+    if detect_interrupted_session(update, context):
+        await handle_session_recovery(update, context)
+        return
+
     user_logger.log_user_action(user_id, "command_start", {"command": "/search"})
     _record_action(context, "/search:start")
     return await _show_search_prompt(update, context, is_callback=False)
@@ -1629,6 +1635,10 @@ def get_participant_actions_keyboard(
 @require_role("viewer")
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
+    if detect_interrupted_session(update, context):
+        await handle_session_recovery(update, context)
+        return
+
     user_logger.log_user_action(user_id, "command_start", {"command": "/help"})
     _record_action(context, "/help:start")
     role = get_user_role(user_id)
@@ -1666,6 +1676,10 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def add_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Starts the /add flow and initializes the session."""
     user_id = update.effective_user.id
+    if detect_interrupted_session(update, context):
+        await handle_session_recovery(update, context)
+        return
+
     user_logger.log_user_action(user_id, "command_start", {"command": "/add"})
     _record_action(context, "/add:start")
 
@@ -1834,6 +1848,10 @@ async def handle_missing_field_input(
 @require_role("coordinator")
 async def edit_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
+    if detect_interrupted_session(update, context):
+        await handle_session_recovery(update, context)
+        return
+
     role = get_user_role(user_id)
     user_logger.log_user_action(user_id, "command_start", {"command": "/edit"})
     _record_action(context, "/edit:start")
@@ -1854,6 +1872,10 @@ async def edit_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 @require_role("coordinator")
 async def delete_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
+    if detect_interrupted_session(update, context):
+        await handle_session_recovery(update, context)
+        return
+
     role = get_user_role(user_id)
     user_logger.log_user_action(user_id, "command_start", {"command": "/delete"})
     _record_action(context, "/delete:start")
@@ -1877,6 +1899,10 @@ async def edit_field_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
     Использование: /edit_field 123 FullNameRU "Новое имя"
     """
+    if detect_interrupted_session(update, context):
+        await handle_session_recovery(update, context)
+        return
+
     try:
         parts = update.message.text.split(" ", 3)
         if len(parts) < 4:
@@ -1932,6 +1958,10 @@ async def edit_field_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
 @require_role("viewer")
 async def list_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
+    if detect_interrupted_session(update, context):
+        await handle_session_recovery(update, context)
+        return
+
     role = get_user_role(user_id)
     user_logger.log_user_action(user_id, "command_start", {"command": "/list"})
     _record_action(context, "/list:start")
@@ -1983,6 +2013,10 @@ async def list_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 @require_role("viewer")
 async def export_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
+    if detect_interrupted_session(update, context):
+        await handle_session_recovery(update, context)
+        return
+
     user_logger.log_user_action(
         user_id, "command_start", {"command": "/export", "params": context.args}
     )
@@ -2003,6 +2037,10 @@ async def export_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 @require_role("viewer")
 async def cancel_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     user_id = update.effective_user.id
+    if detect_interrupted_session(update, context):
+        await handle_session_recovery(update, context)
+        return
+
     user_logger.log_user_action(user_id, "command_start", {"command": "/cancel"})
     _record_action(context, "/cancel:start")
     _log_session_end(context, user_id)
@@ -2349,6 +2387,33 @@ async def handle_edit_participant_callback(
 
     await show_confirmation(update, context, asdict(participant))
     return CONFIRMING_DATA
+
+
+async def handle_session_recovery_callback(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> int:
+    """Обрабатывает восстановление сессии."""
+    query = update.callback_query
+    await query.answer()
+
+    action = query.data
+
+    if action == "recover_editing":
+        participant_data = context.user_data.get("parsed_participant", {})
+        await show_confirmation(update, context, participant_data)
+        return CONFIRMING_DATA
+
+    elif action == "recover_adding":
+        participant_data = context.user_data.get("add_flow_data", {})
+        await show_interactive_missing_field(update, context, participant_data)
+        return FILLING_MISSING_FIELDS
+
+    elif action == "clear_session":
+        context.user_data.clear()
+        await _show_main_menu(update, context)
+        return ConversationHandler.END
+
+    return ConversationHandler.END
 
 
 # Обработка неизвестных команд и текстовых сообщений
@@ -2853,9 +2918,6 @@ def main():
         entry_points=[
             CommandHandler("add", add_command),
             CallbackQueryHandler(handle_add_callback, pattern="^main_add$"),
-            CallbackQueryHandler(
-                handle_edit_participant_callback, pattern="^edit_participant_"
-            ),
         ],
         states={
             COLLECTING_DATA: [
@@ -2923,6 +2985,17 @@ def main():
     application.add_handler(CommandHandler("list", list_command))
     application.add_handler(CommandHandler("export", export_command))
     application.add_handler(CommandHandler("cancel", cancel_command))
+    application.add_handler(
+        CallbackQueryHandler(
+            handle_edit_participant_callback, pattern="^edit_participant_"
+        )
+    )
+    application.add_handler(
+        CallbackQueryHandler(
+            handle_session_recovery_callback,
+            pattern="^(recover_editing|recover_adding|clear_session)$",
+        )
+    )
 
     # Обработчик текстовых сообщений
     application.add_handler(
