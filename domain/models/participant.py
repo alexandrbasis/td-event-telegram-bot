@@ -22,6 +22,23 @@ class Participant:
     country_and_city: str = ""
 
     @classmethod
+    def from_dict(cls, data: dict) -> "Participant":
+        """Создает участника из словаря старого формата."""
+        return cls(
+            id=data.get("id"),
+            full_name_ru=data.get("FullNameRU", ""),
+            gender=Gender.from_string(data.get("Gender", "F")),
+            size=data.get("Size", ""),
+            church=data.get("Church", ""),
+            role=data.get("Role", ""),
+            department=data.get("Department", ""),
+            full_name_en=data.get("FullNameEN", ""),
+            submitted_by=data.get("SubmittedBy", ""),
+            contact_information=data.get("ContactInformation", ""),
+            country_and_city=data.get("CountryAndCity", ""),
+        )
+
+    @classmethod
     def from_legacy(cls, legacy: LegacyParticipant) -> "Participant":
         """Конвертер из старой модели."""
         return cls(
