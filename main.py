@@ -930,6 +930,16 @@ async def _show_main_menu(
                 f"Found user_data when showing main menu: {list(context.user_data.keys())}"
             )
             context.user_data.clear()
+        if hasattr(context, "chat_data") and context.chat_data:
+            conversation_keys = [
+                k
+                for k in list(context.chat_data.keys())
+                if "conversation" in str(k).lower()
+            ]
+            if conversation_keys:
+                logger.info(f"Clearing chat_data keys: {conversation_keys}")
+                for key in conversation_keys:
+                    context.chat_data.pop(key, None)
 
     if is_return:
         welcome_text = (
@@ -1482,10 +1492,6 @@ async def handle_action_selection(
         )
         return CHOOSING_ACTION
 
-    if action == "search_new":
-        cleanup_user_data_safe(context, user_id)
-        return await handle_search_callback(update, context)
-
     return CHOOSING_ACTION
 
 
@@ -1536,7 +1542,7 @@ def get_participant_actions_keyboard(
                     InlineKeyboardButton("🗑️ Удалить", callback_data="action_delete"),
                 ],
                 [
-                    InlineKeyboardButton("🔍 Новый поиск", callback_data="search_new"),
+                    InlineKeyboardButton("🔍 Найти еще", callback_data="main_search"),
                     InlineKeyboardButton("🏠 Главное меню", callback_data="main_menu"),
                 ],
             ]
@@ -1544,7 +1550,7 @@ def get_participant_actions_keyboard(
     else:
         buttons.append(
             [
-                InlineKeyboardButton("🔍 Новый поиск", callback_data="search_new"),
+                InlineKeyboardButton("🔍 Найти еще", callback_data="main_search"),
                 InlineKeyboardButton("🏠 Главное меню", callback_data="main_menu"),
             ]
         )
@@ -2644,7 +2650,6 @@ def main():
             ],
             CHOOSING_ACTION: [
                 CallbackQueryHandler(handle_action_selection, pattern="^action_"),
-                CallbackQueryHandler(handle_action_selection, pattern="^search_new$"),
             ],
             EXECUTING_ACTION: [
                 CallbackQueryHandler(
@@ -2659,6 +2664,7 @@ def main():
             CommandHandler("cancel", cancel_command),
             CallbackQueryHandler(cancel_callback, pattern="^main_cancel$"),
             CallbackQueryHandler(handle_main_menu_callback, pattern="^main_menu$"),
+            CallbackQueryHandler(handle_main_menu_callback, pattern="^search_new$"),
         ],
         per_chat=True,
     )
