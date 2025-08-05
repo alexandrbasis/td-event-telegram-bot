@@ -1,21 +1,22 @@
 import logging
-from logging.handlers import RotatingFileHandler
 import re
-from typing import List, Dict, Optional
-from dataclasses import asdict
 import time
 import traceback
-from datetime import datetime
 from collections import defaultdict
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from datetime import datetime
 from functools import wraps
+from logging.handlers import RotatingFileHandler
+from dataclasses import asdict
+from typing import Dict, List, Optional
+
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import (
     Application,
+    CallbackQueryHandler,
     CommandHandler,
     ContextTypes,
     ConversationHandler,
     MessageHandler,
-    CallbackQueryHandler,
     filters,
 )
 import config
@@ -1075,6 +1076,43 @@ async def handle_main_menu_callback(update: Update, context: ContextTypes.DEFAUL
 # --- SEARCH HANDLERS ---
 
 
+
+async def _show_search_prompt(
+    update: Update, context: ContextTypes.DEFAULT_TYPE, is_callback: bool = False
+) -> int:
+    """Общая логика для показа поискового промпта."""
+
+    cancel_markup = InlineKeyboardMarkup(
+        [[InlineKeyboardButton("❌ Отмена", callback_data="main_cancel")]]
+    )
+
+    text = (
+        "🔍 **Поиск участников**\n\n"
+        "Введите для поиска:\n"
+        "• **Имя** (русское или английское)\n"
+        "• **ID участника** (например: 123)\n"
+        "• **Часть имени** (например: Иван)\n\n"
+        "💡 *Поиск поддерживает нечеткое совпадение*"
+    )
+
+    if is_callback:
+        await update.callback_query.answer()
+        await update.callback_query.edit_message_reply_markup(reply_markup=None)
+        msg = await update.callback_query.message.reply_text(
+            text, parse_mode="Markdown", reply_markup=cancel_markup
+        )
+        _add_message_to_cleanup(context, update.callback_query.message.message_id)
+    else:
+        msg = await update.message.reply_text(
+            text, parse_mode="Markdown", reply_markup=cancel_markup
+        )
+        _add_message_to_cleanup(context, update.message.message_id)
+
+    _add_message_to_cleanup(context, msg.message_id)
+    context.user_data["current_state"] = SEARCHING_PARTICIPANTS
+    return SEARCHING_PARTICIPANTS
+
+
 @require_role("viewer")
 async def search_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Инициация поиска участников через команду /search."""
@@ -1082,57 +1120,22 @@ async def search_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     user_id = update.effective_user.id
     user_logger.log_user_action(user_id, "command_start", {"command": "/search"})
     _record_action(context, "/search:start")
-
-    cancel_markup = InlineKeyboardMarkup(
-        [[InlineKeyboardButton("❌ Отмена", callback_data="main_cancel")]]
-    )
-
-    msg1 = await update.message.reply_text(
-        "🔍 **Поиск участников**\n\n"
-        "Введите для поиска:\n"
-        "• **Имя** (русское или английское)\n"
-        "• **ID участника** (например: 123)\n"
-        "• **Часть имени** (например: Иван)\n\n"
-        "💡 *Поиск поддерживает нечеткое совпадение*",
-        parse_mode="Markdown",
-        reply_markup=cancel_markup,
-    )
-
-    _add_message_to_cleanup(context, msg1.message_id)
-    _add_message_to_cleanup(context, update.message.message_id)
-
-    context.user_data["current_state"] = SEARCHING_PARTICIPANTS
-    return SEARCHING_PARTICIPANTS
+    return await _show_search_prompt(update, context, is_callback=False)
 
 
 @require_role("viewer")
 async def handle_search_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Обработчик кнопки поиска из главного меню."""
 
-    query = update.callback_query
-    await query.answer()
-    await query.edit_message_reply_markup(reply_markup=None)
+    return await _show_search_prompt(update, context, is_callback=True)
 
-    cancel_markup = InlineKeyboardMarkup(
-        [[InlineKeyboardButton("❌ Отмена", callback_data="main_cancel")]]
+
+def sanitize_search_query(query: str) -> str:
+    """Очищает поисковый запрос от потенциально опасных символов."""
+    sanitized = re.sub(
+        r"[^\w\s\-а-яё]", "", query, flags=re.IGNORECASE | re.UNICODE
     )
-
-    msg1 = await query.message.reply_text(
-        "🔍 **Поиск участников**\n\n"
-        "Введите для поиска:\n"
-        "• **Имя** (русское или английское)\n"
-        "• **ID участника** (например: 123)\n"
-        "• **Часть имени** (например: Иван)\n\n"
-        "💡 *Поиск поддерживает нечеткое совпадение*",
-        parse_mode="Markdown",
-        reply_markup=cancel_markup,
-    )
-
-    _add_message_to_cleanup(context, msg1.message_id)
-    _add_message_to_cleanup(context, query.message.message_id)
-
-    context.user_data["current_state"] = SEARCHING_PARTICIPANTS
-    return SEARCHING_PARTICIPANTS
+    return sanitized.strip()[:100]
 
 
 @smart_cleanup_on_error
@@ -1141,7 +1144,7 @@ async def handle_search_input(update: Update, context: ContextTypes.DEFAULT_TYPE
     """Обработка поискового запроса."""
 
     user_id = update.effective_user.id
-    query_text = update.message.text.strip()
+    query_text = sanitize_search_query(update.message.text.strip())
 
     if len(query_text) < 2:
         await update.message.reply_text(
@@ -1151,9 +1154,21 @@ async def handle_search_input(update: Update, context: ContextTypes.DEFAULT_TYPE
 
     _add_message_to_cleanup(context, update.message.message_id)
 
-    start = time.time()
-    search_results = participant_service.search_participants(query_text, max_results=5)
-    duration = time.time() - start
+    try:
+        start = time.time()
+        search_results = participant_service.search_participants(
+            query_text, max_results=5
+        )
+        duration = time.time() - start
+    except Exception as e:
+        logger.error(f"Search error for query '{query_text}': {e}")
+        await update.message.reply_text(
+            "❌ **Ошибка поиска**\n\n"
+            "Произошла техническая ошибка. Попробуйте позже или обратитесь к администратору.",
+            parse_mode="Markdown",
+        )
+        cleanup_user_data_safe(context, user_id)
+        return SEARCHING_PARTICIPANTS
 
     user_logger.log_user_action(
         user_id,
@@ -1227,6 +1242,7 @@ async def handle_participant_selection(
         await query.message.reply_text(
             "❌ Участник не найден. Попробуйте поиск снова."
         )
+        cleanup_user_data_safe(context, user_id)
         return SEARCHING_PARTICIPANTS
 
     user_logger.log_user_action(
@@ -1240,7 +1256,17 @@ async def handle_participant_selection(
 
     context.user_data["selected_participant"] = selected_participant
 
-    await show_participant_details_and_actions(update, context, selected_participant)
+    try:
+        await show_participant_details_and_actions(update, context, selected_participant)
+    except Exception as e:
+        logger.error(
+            f"Error showing participant details for ID {participant_id}: {e}"
+        )
+        await update.callback_query.message.reply_text(
+            "❌ Ошибка при загрузке данных участника. Попробуйте снова."
+        )
+        cleanup_user_data_safe(context, user_id)
+        return SEARCHING_PARTICIPANTS
 
     context.user_data["current_state"] = CHOOSING_ACTION
     return CHOOSING_ACTION
@@ -1323,7 +1349,7 @@ async def handle_action_selection(
             return CHOOSING_ACTION
 
         context.user_data["participant_id"] = participant_id
-        context.user_data["parsed_participant"] = asdict(selected_participant)
+        context.user_data["parsed_participant"] = selected_participant
 
         user_logger.log_user_action(
             user_id,

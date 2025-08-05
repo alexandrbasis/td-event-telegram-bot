@@ -1,8 +1,9 @@
-from typing import Dict, List, Optional, Tuple, Union
-from dataclasses import asdict, dataclass
-import logging
 import json
+import logging
 import time
+from dataclasses import asdict, dataclass
+from typing import Dict, List, Optional, Tuple, Union
+
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
 from repositories.participant_repository import AbstractParticipantRepository
@@ -379,6 +380,22 @@ class ParticipantService:
         self.repository = repository
         self.logger = logging.getLogger("participant_changes")
         self.performance_logger = logging.getLogger("performance")
+        self._participants_cache = None
+        self._cache_timestamp = 0
+        self._cache_ttl = 300  # 5 минут
+
+    def _get_cached_participants(self):
+        now = time.time()
+        if (
+            self._participants_cache is None
+            or now - self._cache_timestamp > self._cache_ttl
+        ):
+            logger.debug("Refreshing participants cache")
+            self._participants_cache = self.get_all_participants()
+            self._cache_timestamp = now
+        else:
+            logger.debug("Using cached participants")
+        return self._participants_cache
 
     def _log_participant_change(
         self,
@@ -627,7 +644,7 @@ class ParticipantService:
                 )
                 return results
 
-        all_participants = self.get_all_participants()
+        all_participants = self._get_cached_participants()
 
         # 2. Точные совпадения по именам
         for p in all_participants:
