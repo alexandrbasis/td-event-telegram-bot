@@ -129,15 +129,33 @@ def smart_cleanup_on_error(func):
                 },
                 func.__name__,
             )
+            error_keyboard = InlineKeyboardMarkup(
+                [
+                    [
+                        InlineKeyboardButton(
+                            "🔄 Попробовать снова", callback_data="main_add"
+                        )
+                    ],
+                    [
+                        InlineKeyboardButton(
+                            "🏠 Главное меню", callback_data="main_menu"
+                        )
+                    ],
+                ]
+            )
             try:
                 if update.message:
                     await update.message.reply_text(
-                        f"❌ **Ошибка валидации:**\n{e}", parse_mode="Markdown"
+                        f"❌ **Ошибка валидации:**\n{e}\n\n💡 Проверьте данные и попробуйте снова.",
+                        parse_mode="Markdown",
+                        reply_markup=error_keyboard,
                     )
                 elif update.callback_query:
                     await update.callback_query.answer()
                     await update.callback_query.message.reply_text(
-                        f"❌ **Ошибка валидации:**\n{e}", parse_mode="Markdown"
+                        f"❌ **Ошибка валидации:**\n{e}\n\n💡 Проверьте данные и попробуйте снова.",
+                        parse_mode="Markdown",
+                        reply_markup=error_keyboard,
                     )
             except Exception as send_error:
                 logger.error(
@@ -222,20 +240,52 @@ def smart_cleanup_on_error(func):
                 context, user_id if isinstance(user_id, int) else None
             )
 
+            critical_error_keyboard = InlineKeyboardMarkup(
+                [
+                    [
+                        InlineKeyboardButton(
+                            "🔄 Начать заново", callback_data="main_add"
+                        )
+                    ],
+                    [
+                        InlineKeyboardButton(
+                            "📞 Техподдержка", url="https://t.me/your_support_bot"
+                        )
+                    ],
+                    [
+                        InlineKeyboardButton(
+                            "🏠 Главное меню", callback_data="main_menu"
+                        )
+                    ],
+                ]
+            )
+
+            error_msg = "❌ **Произошла техническая ошибка**\n\n"
+            if "Airtable" in str(e):
+                if "INVALID_MULTIPLE_CHOICE_OPTIONS" in str(e):
+                    error_msg += "🔧 **Проблема с Airtable:** Недостаточно прав для создания нового значения.\n"
+                    error_msg += (
+                        "💡 Обратитесь к администратору для настройки поля в Airtable."
+                    )
+                else:
+                    error_msg += "🔧 **Проблема подключения к базе данных.**\n"
+                    error_msg += "💡 Попробуйте позже или обратитесь в техподдержку."
+            else:
+                error_msg += "🔄 Попробуйте снова или обратитесь к администратору."
+
             try:
                 if update.message:
                     await update.message.reply_text(
-                        "❌ **Произошла техническая ошибка.**\n\n"
-                        "🔄 Попробуйте снова с команды /add\n"
-                        "📞 Если проблема повторяется, обратитесь к администратору.",
+                        error_msg,
                         parse_mode="Markdown",
+                        reply_markup=critical_error_keyboard,
                     )
                 elif update.callback_query:
                     await update.callback_query.answer()
                     await update.callback_query.message.reply_text(
-                        "❌ **Произошла техническая ошибка.**\n\n"
-                        "🔄 Попробуйте снова с команды /add",
+                        error_msg,
                         parse_mode="Markdown",
+                        reply_markup=critical_error_keyboard,
                     )
             except Exception as send_error:
                 logging.getLogger("errors").error(
