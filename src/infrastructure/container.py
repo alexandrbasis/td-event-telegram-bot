@@ -39,6 +39,12 @@ class Container(containers.DeclarativeContainer):
 
     event_dispatcher = providers.Singleton("shared.event_dispatcher.EventDispatcher")
 
+    # Event Listeners
+    participant_event_listener = providers.Factory(
+        "application.event_handlers.participant_event_listener.ParticipantEventListener",
+        logger=providers.Callable("logging.getLogger", "participant_events"),
+    )
+
     # Use Cases
     add_participant_use_case = providers.Factory(
         "application.use_cases.add_participant.AddParticipantUseCase",
@@ -128,3 +134,18 @@ class Container(containers.DeclarativeContainer):
         "presentation.handlers.callback_handlers.DuplicateCallbackHandler",
         container=providers.Self(),
     )
+
+    def configure_events(self):
+        """Настройка подписок на события."""
+        from domain.events.participant_events import (
+            ParticipantAddedEvent,
+            ParticipantUpdatedEvent,
+        )
+
+        dispatcher = self.event_dispatcher()
+        listener = self.participant_event_listener()
+
+        dispatcher.subscribe(ParticipantAddedEvent, listener.on_participant_added)
+        dispatcher.subscribe(ParticipantUpdatedEvent, listener.on_participant_updated)
+
+        logging.getLogger("container").info("✅ Event listeners configured")
