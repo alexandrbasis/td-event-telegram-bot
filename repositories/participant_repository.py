@@ -34,7 +34,7 @@ class AbstractParticipantRepository(ABC):
         pass
 
     @abstractmethod
-    def get_by_id(self, participant_id: int) -> Optional[Participant]:
+    def get_by_id(self, participant_id: Union[int, str]) -> Optional[Participant]:
         """
         Находит участника по ID.
 
@@ -85,7 +85,7 @@ class AbstractParticipantRepository(ABC):
         pass
 
     @abstractmethod
-    def update_fields(self, participant_id: int, **fields) -> bool:
+    def update_fields(self, participant_id: Union[int, str], **fields) -> bool:
         """
         ✅ НОВЫЙ МЕТОД: частичное обновление конкретных полей.
 
@@ -107,7 +107,7 @@ class AbstractParticipantRepository(ABC):
         pass
 
     @abstractmethod
-    def delete(self, participant_id: int) -> bool:
+    def delete(self, participant_id: Union[int, str]) -> bool:
         """
         ✅ НОВЫЙ МЕТОД: удаление участника.
 
@@ -123,7 +123,7 @@ class AbstractParticipantRepository(ABC):
         pass
 
     @abstractmethod
-    def exists(self, participant_id: int) -> bool:
+    def exists(self, participant_id: Union[int, str]) -> bool:
         """
         ✅ НОВЫЙ МЕТОД: проверка существования участника.
 
@@ -134,6 +134,16 @@ class AbstractParticipantRepository(ABC):
             bool: True если участник существует
         """
         pass
+
+
+class BaseParticipantRepository(AbstractParticipantRepository):
+    """Base repository with shared validation helpers."""
+
+    def _validate_fields(self, **fields) -> None:
+        valid_field_names = set(Participant.__annotations__.keys()) - {"id"}
+        invalid_fields = set(fields.keys()) - valid_field_names
+        if invalid_fields:
+            raise ValueError(f"Invalid fields for Participant: {invalid_fields}")
 
 
 import logging
@@ -159,7 +169,7 @@ import sqlite3
 logger = logging.getLogger(__name__)
 
 
-class SqliteParticipantRepository(AbstractParticipantRepository):
+class SqliteParticipantRepository(BaseParticipantRepository):
     """✅ ИСПРАВЛЕННАЯ конкретная реализация репозитория для SQLite."""
 
     def add(self, participant: Participant) -> int:
@@ -171,7 +181,8 @@ class SqliteParticipantRepository(AbstractParticipantRepository):
         except sqlite3.Error as e:
             raise DatabaseError(f"SQLite error on add: {e}") from e
 
-    def get_by_id(self, participant_id: int) -> Optional[Participant]:
+    def get_by_id(self, participant_id: Union[int, str]) -> Optional[Participant]:
+        participant_id = int(participant_id)
         logger.info(f"Getting participant by ID from SQLite: {participant_id}")
         try:
             participant_dict = get_participant_by_id(participant_id)
@@ -238,16 +249,11 @@ class SqliteParticipantRepository(AbstractParticipantRepository):
         except sqlite3.Error as e:
             raise DatabaseError(f"SQLite error on update: {e}") from e
 
-    def update_fields(self, participant_id: int, **fields) -> bool:
+    def update_fields(self, participant_id: Union[int, str], **fields) -> bool:
         """
         ✅ НОВЫЙ МЕТОД: частичное обновление полей.
         """
-        # Валидация: проверяем, что все поля существуют в Participant
-        valid_field_names = set(Participant.__annotations__.keys())
-        invalid_fields = set(fields.keys()) - valid_field_names
-
-        if invalid_fields:
-            raise ValueError(f"Invalid fields for Participant: {invalid_fields}")
+        self._validate_fields(**fields)
 
         logger.info(
             f"Updating fields for participant {participant_id}: {list(fields.keys())}"
@@ -271,17 +277,18 @@ class SqliteParticipantRepository(AbstractParticipantRepository):
         except sqlite3.Error as e:
             raise DatabaseError(f"SQLite error on update_fields: {e}") from e
 
-    def delete(self, participant_id: int) -> bool:
+    def delete(self, participant_id: Union[int, str]) -> bool:
         """
         ✅ ОБНОВЛЕНО: теперь использует реальное удаление из БД.
         """
+        participant_id = int(participant_id)
         logger.info(f"Deleting participant from SQLite: {participant_id}")
         try:
             return delete_participant(participant_id)
         except sqlite3.Error as e:
             raise DatabaseError(f"SQLite error on delete: {e}") from e
 
-    def exists(self, participant_id: int) -> bool:
+    def exists(self, participant_id: Union[int, str]) -> bool:
         """
         ✅ НОВЫЙ МЕТОД: проверка существования.
         """

@@ -35,7 +35,9 @@ try:
     AIRTABLE_AVAILABLE = True
 except ImportError:
     AIRTABLE_AVAILABLE = False
-    AirtableApiError = Exception  # Fallback
+    class AirtableApiError(Exception):
+        """Fallback Airtable API error when pyairtable is unavailable."""
+        pass
 from services.participant_service import ParticipantService, SearchResult
 from models.participant import Participant
 from parsers.participant_parser import (
@@ -1228,7 +1230,10 @@ async def handle_participant_selection(
     query = update.callback_query
     await query.answer()
 
-    participant_id = int(query.data.split("_")[-1])
+    try:
+        participant_id = int(query.data.split("_")[-1])
+    except ValueError:
+        participant_id = query.data.split("_")[-1]
     user_id = update.effective_user.id
 
     search_results: List[SearchResult] = context.user_data.get("search_results", [])
@@ -1389,7 +1394,10 @@ async def handle_action_selection(
         return EXECUTING_ACTION
 
     if action.startswith("confirm_delete_"):
-        participant_id = int(action.split("_")[-1])
+        try:
+            participant_id = int(action.split("_")[-1])
+        except ValueError:
+            participant_id = action.split("_")[-1]
         try:
             participant_service.delete_participant(
                 participant_id,
@@ -1761,8 +1769,11 @@ async def edit_field_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
             )
             return
 
-        _, participant_id, field_name, new_value = parts
-        participant_id = int(participant_id)
+        _, participant_id_str, field_name, new_value = parts
+        try:
+            participant_id = int(participant_id_str)
+        except ValueError:
+            participant_id = participant_id_str
 
         if not participant_service.participant_exists(participant_id):
             await update.message.reply_text(
