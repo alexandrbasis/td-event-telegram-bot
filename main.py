@@ -35,9 +35,13 @@ try:
     AIRTABLE_AVAILABLE = True
 except ImportError:
     AIRTABLE_AVAILABLE = False
+
     class AirtableApiError(Exception):
         """Fallback Airtable API error when pyairtable is unavailable."""
+
         pass
+
+
 from services.participant_service import ParticipantService, SearchResult
 from models.participant import Participant
 from parsers.participant_parser import (
@@ -1078,7 +1082,6 @@ async def handle_main_menu_callback(update: Update, context: ContextTypes.DEFAUL
 # --- SEARCH HANDLERS ---
 
 
-
 async def _show_search_prompt(
     update: Update, context: ContextTypes.DEFAULT_TYPE, is_callback: bool = False
 ) -> int:
@@ -1126,7 +1129,9 @@ async def search_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
 
 @require_role("viewer")
-async def handle_search_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+async def handle_search_callback(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> int:
     """Обработчик кнопки поиска из главного меню."""
 
     return await _show_search_prompt(update, context, is_callback=True)
@@ -1134,15 +1139,15 @@ async def handle_search_callback(update: Update, context: ContextTypes.DEFAULT_T
 
 def sanitize_search_query(query: str) -> str:
     """Очищает поисковый запрос от потенциально опасных символов."""
-    sanitized = re.sub(
-        r"[^\w\s\-а-яё]", "", query, flags=re.IGNORECASE | re.UNICODE
-    )
+    sanitized = re.sub(r"[^\w\s\-а-яё]", "", query, flags=re.IGNORECASE | re.UNICODE)
     return sanitized.strip()[:100]
 
 
 @smart_cleanup_on_error
 @log_state_transitions
-async def handle_search_input(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+async def handle_search_input(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> int:
     """Обработка поискового запроса."""
 
     user_id = update.effective_user.id
@@ -1202,9 +1207,7 @@ async def handle_search_input(update: Update, context: ContextTypes.DEFAULT_TYPE
         _add_message_to_cleanup(context, msg.message_id)
         return SEARCHING_PARTICIPANTS
 
-    results_text = (
-        f"🔍 **Результаты поиска** (найдено: {len(search_results)})\n\n"
-    )
+    results_text = f"🔍 **Результаты поиска** (найдено: {len(search_results)})\n\n"
     for result in search_results:
         results_text += participant_service.format_search_result(result) + "\n\n"
     results_text += "👆 Выберите участника для действий:"
@@ -1244,9 +1247,7 @@ async def handle_participant_selection(
             break
 
     if not selected_participant:
-        await query.message.reply_text(
-            "❌ Участник не найден. Попробуйте поиск снова."
-        )
+        await query.message.reply_text("❌ Участник не найден. Попробуйте поиск снова.")
         cleanup_user_data_safe(context, user_id)
         return SEARCHING_PARTICIPANTS
 
@@ -1262,11 +1263,11 @@ async def handle_participant_selection(
     context.user_data["selected_participant"] = selected_participant
 
     try:
-        await show_participant_details_and_actions(update, context, selected_participant)
-    except Exception as e:
-        logger.error(
-            f"Error showing participant details for ID {participant_id}: {e}"
+        await show_participant_details_and_actions(
+            update, context, selected_participant
         )
+    except Exception as e:
+        logger.error(f"Error showing participant details for ID {participant_id}: {e}")
         await update.callback_query.message.reply_text(
             "❌ Ошибка при загрузке данных участника. Попробуйте снова."
         )
@@ -1290,14 +1291,16 @@ async def show_participant_details_and_actions(
     details_text = f"👤 **{participant.FullNameRU}** (ID: {participant.id})\n\n"
     if participant.FullNameEN:
         details_text += f"🌍 **English:** {participant.FullNameEN}\n"
-    details_text += f"⚥ **Пол:** {GENDER_DISPLAY.get(participant.Gender, participant.Gender)}\n"
+    details_text += (
+        f"⚥ **Пол:** {GENDER_DISPLAY.get(participant.Gender, participant.Gender)}\n"
+    )
     details_text += f"👕 **Размер:** {participant.Size or 'Не указано'}\n"
     details_text += f"⛪ **Церковь:** {participant.Church or 'Не указано'}\n"
-    details_text += f"👥 **Роль:** {ROLE_DISPLAY.get(participant.Role, participant.Role)}\n"
+    details_text += (
+        f"👥 **Роль:** {ROLE_DISPLAY.get(participant.Role, participant.Role)}\n"
+    )
     if participant.Role == "TEAM" and participant.Department:
-        details_text += (
-            f"🏢 **Департамент:** {DEPARTMENT_DISPLAY.get(participant.Department, participant.Department)}\n"
-        )
+        details_text += f"🏢 **Департамент:** {DEPARTMENT_DISPLAY.get(participant.Department, participant.Department)}\n"
     if participant.CountryAndCity:
         details_text += f"🏙️ **Город:** {participant.CountryAndCity}\n"
     if participant.SubmittedBy:
@@ -1338,9 +1341,7 @@ async def handle_action_selection(
     )
 
     if not selected_participant:
-        await query.message.reply_text(
-            "❌ Участник не выбран. Начните поиск заново."
-        )
+        await query.message.reply_text("❌ Участник не выбран. Начните поиск заново.")
         return ConversationHandler.END
 
     participant_id = selected_participant.id
@@ -1376,7 +1377,8 @@ async def handle_action_selection(
             [
                 [
                     InlineKeyboardButton(
-                        "✅ Да, удалить", callback_data=f"confirm_delete_{participant_id}"
+                        "✅ Да, удалить",
+                        callback_data=f"confirm_delete_{participant_id}",
                     ),
                     InlineKeyboardButton("❌ Отмена", callback_data="action_cancel"),
                 ]
@@ -1409,8 +1411,16 @@ async def handle_action_selection(
             )
             success_keyboard = InlineKeyboardMarkup(
                 [
-                    [InlineKeyboardButton("🔍 Новый поиск", callback_data="main_search")],
-                    [InlineKeyboardButton("🏠 Главное меню", callback_data="main_menu")],
+                    [
+                        InlineKeyboardButton(
+                            "🔍 Новый поиск", callback_data="main_search"
+                        )
+                    ],
+                    [
+                        InlineKeyboardButton(
+                            "🏠 Главное меню", callback_data="main_menu"
+                        )
+                    ],
                 ]
             )
             await query.message.reply_text(
@@ -1486,9 +1496,7 @@ def get_participant_actions_keyboard(
                     InlineKeyboardButton(
                         "✏️ Редактировать", callback_data="action_edit"
                     ),
-                    InlineKeyboardButton(
-                        "🗑️ Удалить", callback_data="action_delete"
-                    ),
+                    InlineKeyboardButton("🗑️ Удалить", callback_data="action_delete"),
                 ],
                 [
                     InlineKeyboardButton("🔍 Новый поиск", callback_data="search_new"),
@@ -1505,6 +1513,7 @@ def get_participant_actions_keyboard(
         )
 
     return InlineKeyboardMarkup(buttons)
+
 
 # Equivalent to the main_help callback handler
 # Команда /help
@@ -2583,9 +2592,7 @@ def main():
         ],
         states={
             SEARCHING_PARTICIPANTS: [
-                MessageHandler(
-                    filters.TEXT & ~filters.COMMAND, handle_search_input
-                )
+                MessageHandler(filters.TEXT & ~filters.COMMAND, handle_search_input)
             ],
             SELECTING_PARTICIPANT: [
                 CallbackQueryHandler(
@@ -2600,7 +2607,9 @@ def main():
                 CallbackQueryHandler(
                     handle_action_selection, pattern="^confirm_delete_"
                 ),
-                CallbackQueryHandler(handle_action_selection, pattern="^action_cancel$"),
+                CallbackQueryHandler(
+                    handle_action_selection, pattern="^action_cancel$"
+                ),
             ],
         },
         fallbacks=[
@@ -2608,6 +2617,8 @@ def main():
             CallbackQueryHandler(cancel_callback, pattern="^main_cancel$"),
             CallbackQueryHandler(handle_main_menu_callback, pattern="^main_menu$"),
         ],
+        per_message=True,
+        per_chat=True,
     )
 
     add_conv = ConversationHandler(
@@ -2661,6 +2672,8 @@ def main():
             CommandHandler("cancel", cancel_command),
             CallbackQueryHandler(cancel_callback, pattern="^main_cancel$"),
         ],
+        per_message=True,
+        per_chat=True,
     )
     # ConversationHandler должен быть зарегистрирован первым
     application.add_handler(search_conv)
