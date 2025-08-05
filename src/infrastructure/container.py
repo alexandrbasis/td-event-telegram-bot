@@ -32,11 +32,20 @@ class Container(containers.DeclarativeContainer):
         ),
     )
 
+    duplicate_checker = providers.Factory(
+        "domain.services.duplicate_checker.DuplicateCheckerService",
+        repository=participant_repository,
+    )
+
+    event_dispatcher = providers.Singleton("shared.event_dispatcher.EventDispatcher")
+
     # Use Cases
     add_participant_use_case = providers.Factory(
         "application.use_cases.add_participant.AddParticipantUseCase",
         repository=participant_repository,
         validator=participant_validator,
+        duplicate_checker=duplicate_checker,
+        event_dispatcher=event_dispatcher,
     )
 
     search_participants_use_case = providers.Factory(
@@ -56,8 +65,10 @@ class Container(containers.DeclarativeContainer):
 
     update_participant_use_case = providers.Factory(
         "application.use_cases.update_participant.UpdateParticipantUseCase",
-        participant_service=legacy_participant_service,
+        repository=participant_repository,
         validator=participant_validator,
+        duplicate_checker=duplicate_checker,
+        event_dispatcher=event_dispatcher,
     )
 
     delete_participant_use_case = providers.Factory(
