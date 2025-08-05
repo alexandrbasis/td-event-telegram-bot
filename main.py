@@ -1057,9 +1057,25 @@ async def handle_main_menu_callback(update: Update, context: ContextTypes.DEFAUL
     if data == "main_list":
         participants = participant_service.get_all_participants()
         if not participants:
+            empty_keyboard = InlineKeyboardMarkup(
+                [
+                    [
+                        InlineKeyboardButton(
+                            "➕ Добавить участника", callback_data="main_add"
+                        )
+                    ],
+                    [
+                        InlineKeyboardButton(
+                            "🏠 Главное меню", callback_data="main_menu"
+                        )
+                    ],
+                ]
+            )
+
             await query.message.reply_text(
-                "📋 **Список участников пуст**\n\nИспользуйте /add для добавления участников.",
+                "📋 **Список участников пуст**\n\nДобавьте первого участника:",
                 parse_mode="Markdown",
+                reply_markup=empty_keyboard,
             )
             return
 
@@ -1874,9 +1890,21 @@ async def list_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     participants = participant_service.get_all_participants()
 
     if not participants:
+        empty_keyboard = InlineKeyboardMarkup(
+            [
+                [
+                    InlineKeyboardButton(
+                        "➕ Добавить участника", callback_data="main_add"
+                    )
+                ],
+                [InlineKeyboardButton("🏠 Главное меню", callback_data="main_menu")],
+            ]
+        )
+
         await update.message.reply_text(
-            "📋 **Список участников пуст**\n\nИспользуйте /add для добавления участников.",
+            "📋 **Список участников пуст**\n\nДобавьте первого участника:",
             parse_mode="Markdown",
+            reply_markup=empty_keyboard,
         )
         user_logger.log_user_action(
             user_id, "command_end", {"command": "/list", "count": 0}
@@ -2139,7 +2167,15 @@ async def handle_save_confirmation(
                     "result": "updated",
                 },
             )
-            success_message = f"✅ **Участник {participant_data['FullNameRU']} (ID: {participant_id}) успешно обновлен!**"
+            updated_participant = participant_service.get_participant(participant_id)
+            if updated_participant:
+                full_info = format_participant_full_info(asdict(updated_participant))
+                success_message = f"✅ **Участник обновлен!**\n\n{full_info}"
+            else:
+                success_message = (
+                    f"✅ **Участник {participant_data['FullNameRU']} (ID: {participant_id})"
+                    " успешно обновлен!**"
+                )
         else:
             new_participant = participant_service.add_participant(
                 participant_data, user_id=user_id
@@ -2156,12 +2192,30 @@ async def handle_save_confirmation(
                     "result": "added",
                 },
             )
-            success_message = f"✅ **Участник {new_participant.FullNameRU} (ID: {new_participant.id}) успешно добавлен!**"
+            full_info = format_participant_full_info(asdict(new_participant))
+            success_message = f"✅ **Участник добавлен!**\n\n{full_info}"
+
+        keyboard = InlineKeyboardMarkup(
+            [
+                [
+                    InlineKeyboardButton(
+                        "✏️ Редактировать",
+                        callback_data=(
+                            f"edit_participant_{new_participant.id}"
+                            if not is_update
+                            else f"edit_participant_{participant_id}"
+                        ),
+                    ),
+                    InlineKeyboardButton("➕ Добавить еще", callback_data="main_add"),
+                ],
+                [InlineKeyboardButton("🏠 Главное меню", callback_data="main_menu")],
+            ]
+        )
 
         await query.message.reply_text(
             success_message,
             parse_mode="Markdown",
-            reply_markup=get_post_action_keyboard(),
+            reply_markup=keyboard,
         )
     except (DatabaseError, BotException, ValidationError) as e:
         logger.error("Error during save confirmation: %s", e)
@@ -2169,6 +2223,82 @@ async def handle_save_confirmation(
 
     cleanup_user_data_safe(context, update.effective_user.id)
     return ConversationHandler.END
+
+
+# ✅ ДОБАВИТЬ: Новая функция форматирования
+def format_participant_full_info(data: Dict) -> str:
+    """Форматирует полную информацию об участнике для финального отображения."""
+    from constants import (
+        GENDER_DISPLAY,
+        ROLE_DISPLAY,
+        SIZE_DISPLAY,
+        DEPARTMENT_DISPLAY,
+    )
+
+    participant_id = data.get("id")
+    id_display = str(participant_id) if participant_id else "N/A"
+    info = f"👤 **{data.get('FullNameRU', 'Не указано')}** (ID: {id_display})\n"
+
+    if data.get("FullNameEN"):
+        info += f"🌍 English: {data['FullNameEN']}\n"
+
+    info += f"⚥ Пол: {GENDER_DISPLAY.get(data.get('Gender', ''), 'Не указано')}\n"
+    info += f"👕 Размер: {SIZE_DISPLAY.get(data.get('Size', ''), 'Не указано')}\n"
+    info += f"⛪ Церковь: {data.get('Church', 'Не указано')}\n"
+    info += f"👥 Роль: {ROLE_DISPLAY.get(data.get('Role', ''), 'Не указано')}\n"
+
+    if data.get("Role") == "TEAM" and data.get("Department"):
+        info += f"🏢 Департамент: {DEPARTMENT_DISPLAY.get(data['Department'], data['Department'])}\n"
+
+    if data.get("CountryAndCity"):
+        info += f"🏙️ Город: {data['CountryAndCity']}\n"
+    if data.get("SubmittedBy"):
+        info += f"👨‍💼 Кто подал: {data['SubmittedBy']}\n"
+    if data.get("ContactInformation"):
+        info += f"📞 Контакты: {data['ContactInformation']}\n"
+
+    return info
+
+
+# ✅ ДОБАВИТЬ: Обработчик кнопки редактирования
+@require_role("coordinator")
+@log_state_transitions
+async def handle_edit_participant_callback(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> int:
+    """Обработчик кнопки редактирования из финального экрана."""
+    query = update.callback_query
+    user_id = update.effective_user.id
+
+    user_logger.log_user_action(
+        user_id, "edit_from_success_screen", {"callback_data": query.data}
+    )
+
+    await query.answer()
+
+    try:
+        participant_id_raw = query.data.split("_")[-1]
+        participant_id = (
+            int(participant_id_raw)
+            if participant_id_raw.isdigit()
+            else participant_id_raw
+        )
+    except (IndexError, ValueError):
+        await query.message.reply_text("❌ Некорректный ID участника.")
+        return ConversationHandler.END
+
+    participant = participant_service.get_participant(participant_id)
+    if not participant:
+        await query.message.reply_text("❌ Участник не найден.")
+        return ConversationHandler.END
+
+    cleanup_user_data_safe(context, user_id)
+
+    context.user_data["participant_id"] = participant_id
+    context.user_data["parsed_participant"] = asdict(participant)
+
+    await show_confirmation(update, context, asdict(participant))
+    return CONFIRMING_DATA
 
 
 # Обработка неизвестных команд и текстовых сообщений
@@ -2673,6 +2803,9 @@ def main():
         entry_points=[
             CommandHandler("add", add_command),
             CallbackQueryHandler(handle_add_callback, pattern="^main_add$"),
+            CallbackQueryHandler(
+                handle_edit_participant_callback, pattern="^edit_participant_"
+            ),
         ],
         states={
             COLLECTING_DATA: [
