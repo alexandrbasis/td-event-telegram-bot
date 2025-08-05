@@ -345,6 +345,15 @@ def cleanup_user_data_safe(context: ContextTypes.DEFAULT_TYPE, user_id: int = No
         logger.info(
             f"Manually cleared user_data for user {user_id or 'unknown'}: removed keys {keys_to_clear}"
         )
+
+        # Принудительная очистка состояния conversation в chat_data
+        if hasattr(context, "chat_data") and context.chat_data:
+            conversation_keys = [
+                k for k in context.chat_data.keys() if "conversation" in str(k).lower()
+            ]
+            for key in conversation_keys:
+                context.chat_data.pop(key, None)
+                logger.info(f"Cleared conversation state: {key}")
     else:
         logger.debug(f"user_data already empty for user {user_id or 'unknown'}")
 
@@ -610,6 +619,19 @@ def log_state_transitions(func):
 async def log_all_updates(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Middleware to log every incoming update."""
     logger.info("Incoming update: %s", update.to_dict())
+
+
+async def debug_callback_middleware(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> None:
+    """Middleware для отладки callback'ов."""
+    if update.callback_query:
+        callback_data = update.callback_query.data
+        user_id = update.effective_user.id
+
+        logger.info(f"🔘 CALLBACK: User {user_id} pressed '{callback_data}'")
+        if context.user_data:
+            logger.debug(f"📊 user_data keys: {list(context.user_data.keys())}")
 
 
 # Timeout in seconds to wait for user input when editing a specific field
@@ -901,6 +923,13 @@ async def _show_main_menu(
     """Display the main menu, editing the existing message when possible."""
     user_id = update.effective_user.id
     role = get_user_role(user_id)
+    if is_return:
+        logger.info(f"🏠 Showing return main menu for user {user_id}")
+        if context.user_data:
+            logger.warning(
+                f"Found user_data when showing main menu: {list(context.user_data.keys())}"
+            )
+            context.user_data.clear()
 
     if is_return:
         welcome_text = (
@@ -1008,11 +1037,7 @@ async def handle_main_menu_callback(update: Update, context: ContextTypes.DEFAUL
     await query.edit_message_reply_markup(reply_markup=None)
 
     if data == "main_cancel":
-        _log_session_end(context, user_id)
-        await _cleanup_messages(context, update.effective_chat.id)
-        cleanup_user_data_safe(context, user_id)
-        await _show_main_menu(update, context, is_return=True)
-        return
+        return await cancel_callback(update, context)
 
     if data == "main_menu":
         await _show_main_menu(update, context, is_return=True)
@@ -1133,6 +1158,18 @@ async def handle_search_callback(
     update: Update, context: ContextTypes.DEFAULT_TYPE
 ) -> int:
     """Обработчик кнопки поиска из главного меню."""
+    user_id = update.effective_user.id
+
+    logger.info(f"🔍 handle_search_callback called for user {user_id}")
+    logger.debug(f"user_data before search: {list(context.user_data.keys())}")
+
+    if context.user_data:
+        logger.warning(
+            f"Found existing user_data during search start: {list(context.user_data.keys())}"
+        )
+        context.user_data.clear()
+
+    user_logger.log_user_action(user_id, "search_callback_triggered", {})
 
     return await _show_search_prompt(update, context, is_callback=True)
 
@@ -1898,22 +1935,25 @@ async def cancel_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
 
 async def cancel_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Handle cancel buttons and return to the main menu."""
+    """Handle cancel buttons and return to the main menu with forced cleanup."""
     query = update.callback_query
     user_id = update.effective_user.id
+
     user_logger.log_user_action(
         user_id, "command_start", {"command": "cancel_callback", "data": query.data}
     )
-    _record_action(context, "cancel_callback:start")
-    _log_session_end(context, user_id)
-
-    logger.info(f"User {user_id} cancelled operation via {query.data}")
-
+    logger.info(f"❌ Cancel for user {user_id}")
     await query.answer()
 
+    _log_session_end(context, user_id)
+
+    context.user_data.clear()
+    if hasattr(context, "chat_data") and context.chat_data:
+        context.chat_data.clear()
+
     await _cleanup_messages(context, update.effective_chat.id)
-    cleanup_user_data_safe(context, update.effective_user.id)
     await _show_main_menu(update, context, is_return=True)
+
     user_logger.log_user_action(user_id, "command_end", {"command": "cancel_callback"})
     return ConversationHandler.END
 
@@ -2583,6 +2623,9 @@ def main():
     application = Application.builder().token(BOT_TOKEN).build()
 
     # Middleware to log all incoming updates
+    application.add_handler(
+        MessageHandler(filters.ALL, debug_callback_middleware), group=-2
+    )
     application.add_handler(MessageHandler(filters.ALL, log_all_updates), group=-1)
 
     search_conv = ConversationHandler(
