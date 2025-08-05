@@ -11,6 +11,7 @@ from typing import Dict, List, Optional
 
 import sys
 from pathlib import Path
+
 sys.path.append(str(Path(__file__).resolve().parent / "src"))
 
 
@@ -96,6 +97,12 @@ from states import (
 )
 
 BOT_VERSION = "0.1"
+
+
+def create_handlers(container):
+    return {
+        "start": container.start_handler(),
+    }
 
 
 def smart_cleanup_on_error(func):
@@ -2872,11 +2879,15 @@ def main():
     # Initialize dependency container
     global participant_service
     from infrastructure.container import Container
+
     container = Container()
-    container.config.from_dict({
-        "database": {"path": "participants.db"},
-        "telegram": {"bot_token": BOT_TOKEN},
-    })
+    container.config.from_dict(
+        {
+            "database": {"path": "participants.db"},
+            "telegram": {"bot_token": BOT_TOKEN},
+        }
+    )
+    handlers = create_handlers(container)
     participant_service = container.legacy_participant_service()
 
     # Создаем приложение
@@ -2981,7 +2992,9 @@ def main():
     application.add_handler(add_conv)
 
     # Регистрируем обработчики команд
-    application.add_handler(CommandHandler("start", start_command))
+    application.add_handler(
+        CommandHandler("start", handlers["start"].handle_with_logging)
+    )
     application.add_handler(CommandHandler("help", help_command))
     application.add_handler(
         CallbackQueryHandler(
