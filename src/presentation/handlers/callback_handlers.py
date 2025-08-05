@@ -19,6 +19,9 @@ from main import (
 )
 from states import COLLECTING_DATA, CONFIRMING_DUPLICATE
 from messages import MESSAGES
+from application.use_cases.add_participant import AddParticipantCommand
+from application.use_cases.update_participant import UpdateParticipantCommand
+from application.use_cases.search_participant import SearchParticipantsQuery
 
 
 class AddCallbackHandler(BaseHandler):
@@ -73,6 +76,11 @@ class AddCallbackHandler(BaseHandler):
 class SearchCallbackHandler(BaseHandler):
     def __init__(self, container):
         super().__init__(container)
+        self.search_use_case = (
+            container.search_participants_use_case()
+            if hasattr(container, "search_participants_use_case")
+            else None
+        )
         self._handle = require_role("viewer")(self._handle)
 
     async def _handle(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -204,6 +212,10 @@ class SaveConfirmationCallbackHandler(BaseHandler):
     def __init__(self, container):
         super().__init__(container)
         from main import smart_cleanup_on_error, log_state_transitions
+        self.add_use_case = container.add_participant_use_case()
+        self.update_use_case = container.update_participant_use_case()
+        self.search_use_case = container.search_participants_use_case()
+        self.get_use_case = container.get_participant_use_case()
 
         self._handle = require_role("coordinator")(
             smart_cleanup_on_error(log_state_transitions(self._handle))
@@ -233,13 +245,18 @@ class SaveConfirmationCallbackHandler(BaseHandler):
         is_update = "participant_id" in context.user_data
 
         if not is_update:
-            existing = self.participant_service.check_duplicate(
-                participant_data.get("FullNameRU"), user_id=user_id
-            )
-            if existing:
-                context.user_data["existing_participant_id"] = existing.get("id")
+            name = participant_data.get("FullNameRU")
+            existing = None
+            if name:
+                results = await self.search_use_case.execute(
+                    SearchParticipantsQuery(name, max_results=1, user_id=user_id)
+                )
+                if results:
+                    existing = results[0].participant
+            if existing and existing.FullNameRU.lower() == name.lower():
+                context.user_data["existing_participant_id"] = existing.id
                 message = "⚠️ **Найден дубликат!**\n\n"
-                message += format_participant_block(existing)
+                message += format_participant_block(asdict(existing))
                 message += "\n\nЧто делаем?"
                 await query.message.reply_text(
                     message,
@@ -251,8 +268,12 @@ class SaveConfirmationCallbackHandler(BaseHandler):
         try:
             if is_update:
                 participant_id = context.user_data["participant_id"]
-                self.participant_service.update_participant(
-                    participant_id, participant_data, user_id=user_id
+                await self.update_use_case.execute(
+                    UpdateParticipantCommand(
+                        participant_id=participant_id,
+                        user_id=user_id,
+                        participant_data=participant_data,
+                    )
                 )
                 if self.user_logger:
                     self.user_logger.log_participant_operation(
@@ -267,9 +288,7 @@ class SaveConfirmationCallbackHandler(BaseHandler):
                             "result": "updated",
                         },
                     )
-                updated_participant = self.participant_service.get_participant(
-                    participant_id
-                )
+                updated_participant = await self.get_use_case.execute(participant_id)
                 if updated_participant:
                     full_info = format_participant_full_info(
                         asdict(updated_participant)
@@ -281,8 +300,10 @@ class SaveConfirmationCallbackHandler(BaseHandler):
                         " успешно обновлен!**"
                     )
             else:
-                new_participant = self.participant_service.add_participant(
-                    participant_data, user_id=user_id
+                new_participant = await self.add_use_case.execute(
+                    AddParticipantCommand(
+                        user_id=user_id, participant_data=participant_data
+                    )
                 )
                 if self.user_logger:
                     self.user_logger.log_participant_operation(
