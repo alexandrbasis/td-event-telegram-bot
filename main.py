@@ -9,6 +9,11 @@ from logging.handlers import RotatingFileHandler
 from dataclasses import asdict
 from typing import Dict, List, Optional
 
+import sys
+from pathlib import Path
+sys.path.append(str(Path(__file__).resolve().parent / "src"))
+
+
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import (
     Application,
@@ -70,7 +75,7 @@ from services.participant_service import (
     get_department_selection_keyboard_required,
 )
 from utils.validators import validate_participant_data
-from utils.exceptions import (
+from shared.exceptions import (
     BotException,
     ParticipantNotFoundError,
     ValidationError,
@@ -689,7 +694,6 @@ async def debug_callback_middleware(
 FIELD_EDIT_TIMEOUT = 300
 
 # Initialize repository and service instances
-participant_repository = None
 participant_service = None
 
 # --- REQUIRED AND OPTIONAL FIELDS ---
@@ -2865,10 +2869,15 @@ def main():
     # Загружаем справочники в кэш
     load_reference_data()
 
-    # Initialize repository and service instances
-    global participant_repository, participant_service
-    participant_repository = create_participant_repository()
-    participant_service = ParticipantService(repository=participant_repository)
+    # Initialize dependency container
+    global participant_service
+    from infrastructure.container import Container
+    container = Container()
+    container.config.from_dict({
+        "database": {"path": "participants.db"},
+        "telegram": {"bot_token": BOT_TOKEN},
+    })
+    participant_service = container.legacy_participant_service()
 
     # Создаем приложение
     application = Application.builder().token(BOT_TOKEN).build()
