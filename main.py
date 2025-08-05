@@ -115,6 +115,16 @@ def create_handlers(container):
     }
 
 
+def create_application():
+    """Создание и настройка приложения."""
+    from infrastructure.container import Container
+
+    container = Container()
+    container.configure_events()
+    application = Application.builder().token(BOT_TOKEN).build()
+    return application, container
+
+
 def smart_cleanup_on_error(func):
     """
     Улучшенный декоратор для обработки ошибок с умной очисткой состояния.
@@ -1047,8 +1057,6 @@ async def _show_main_menu(
 # Команда /start
 
 
-
-
 # --- SEARCH HANDLERS ---
 
 
@@ -1086,8 +1094,6 @@ async def _show_search_prompt(
     _add_message_to_cleanup(context, msg.message_id)
     context.user_data["current_state"] = SEARCHING_PARTICIPANTS
     return SEARCHING_PARTICIPANTS
-
-
 
 
 def sanitize_search_query(query: str) -> str:
@@ -2310,11 +2316,9 @@ def main():
     # Загружаем справочники в кэш
     load_reference_data()
 
-    # Initialize dependency container
+    # Initialize dependency container and application
     global participant_service
-    from infrastructure.container import Container
-
-    container = Container()
+    application, container = create_application()
     container.config.from_dict(
         {
             "database": {"path": "participants.db"},
@@ -2323,9 +2327,6 @@ def main():
     )
     handlers = create_handlers(container)
     participant_service = container.legacy_participant_service()
-
-    # Создаем приложение
-    application = Application.builder().token(BOT_TOKEN).build()
 
     # Middleware to log all incoming updates
     application.add_handler(
