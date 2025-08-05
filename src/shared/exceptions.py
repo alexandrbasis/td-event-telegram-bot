@@ -1,4 +1,17 @@
-class BotException(Exception):
+class DomainError(Exception):
+    """Базовое доменное исключение"""
+    pass
+
+
+class ValidationError(DomainError):
+    def __init__(self, errors):
+        if isinstance(errors, str):
+            errors = [errors]
+        self.errors = errors
+        super().__init__(f"Validation failed: {', '.join(errors)}")
+
+
+class BotException(DomainError):
     """Base exception for bot errors"""
     pass
 
@@ -10,11 +23,6 @@ class ParticipantNotFoundError(BotException):
 
 class DuplicateParticipantError(BotException):
     """Raised when attempting to create a duplicate participant"""
-    pass
-
-
-class ValidationError(BotException):
-    """Raised when validation of data fails"""
     pass
 
 

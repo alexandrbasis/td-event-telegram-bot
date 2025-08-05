@@ -158,7 +158,7 @@ from database import (
     update_participant,
     delete_participant,
 )
-from utils.exceptions import (
+from shared.exceptions import (
     ParticipantNotFoundError,
     ValidationError,
     BotException,

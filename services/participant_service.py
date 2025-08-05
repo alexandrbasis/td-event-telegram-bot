@@ -10,7 +10,7 @@ from repositories.participant_repository import AbstractParticipantRepository
 from models.participant import Participant
 from database import find_participant_by_name
 from utils.validators import validate_participant_data
-from utils.exceptions import (
+from shared.exceptions import (
     DuplicateParticipantError,
     ParticipantNotFoundError,
     ValidationError,

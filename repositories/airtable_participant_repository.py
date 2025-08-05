@@ -8,7 +8,7 @@ from pyairtable.formulas import match
 from repositories.participant_repository import BaseParticipantRepository
 from models.participant import Participant
 from repositories.airtable_client import AirtableClient
-from utils.exceptions import (
+from shared.exceptions import (
     ParticipantNotFoundError,
     ValidationError,
     BotException,
