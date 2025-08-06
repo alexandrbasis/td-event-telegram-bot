@@ -1,5 +1,5 @@
 from functools import wraps
-from config import COORDINATOR_IDS, VIEWER_IDS
+from ..config import COORDINATOR_IDS, VIEWER_IDS
 
 
 def require_role(required_role):
