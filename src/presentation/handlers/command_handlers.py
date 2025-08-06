@@ -116,9 +116,11 @@ class AddCommandHandler(BaseHandler):
 
 
 class UpdateParticipantHandler(BaseHandler):
-    def __init__(self, container):
+    def __init__(self, container, update_use_case):
         super().__init__(container)
-        self.update_use_case = container.update_participant_use_case()
+        if update_use_case is None:
+            raise ValueError("update_use_case cannot be None")
+        self.update_use_case = update_use_case
         self._handle = require_role("coordinator")(self._handle)
 
     async def _handle(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -258,9 +260,11 @@ class ListCommandHandler(BaseHandler):
 
 
 class SearchCommandHandler(BaseHandler):
-    def __init__(self, container, ui_service, message_service):
+    def __init__(self, container, ui_service, message_service, search_use_case):
         super().__init__(container)
-        self.search_use_case = container.search_participants_use_case()
+        if search_use_case is None:
+            raise ValueError("search_use_case cannot be None")
+        self.search_use_case = search_use_case
         self.ui_service = ui_service
         self.message_service = message_service
         self._handle = require_role("viewer")(self._handle)

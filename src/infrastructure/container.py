@@ -119,6 +119,7 @@ class Container(containers.DeclarativeContainer):
     update_handler = providers.Factory(
         "src.presentation.handlers.command_handlers.UpdateParticipantHandler",
         container=providers.Self(),
+        update_use_case=update_participant_use_case,
     )
     help_handler = providers.Factory(
         "src.presentation.handlers.command_handlers.HelpCommandHandler",
@@ -134,6 +135,7 @@ class Container(containers.DeclarativeContainer):
     search_handler = providers.Factory(
         "src.presentation.handlers.command_handlers.SearchCommandHandler",
         container=providers.Self(),
+        search_use_case=search_participants_use_case,
         ui_service=ui_service,
         message_service=message_service,
     )
