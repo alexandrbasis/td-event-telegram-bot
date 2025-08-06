@@ -17,6 +17,7 @@ from main import (
     _send_response_with_menu_button,
     _show_search_prompt,
 )
+from presentation.ui.formatters.participant_formatter import format_participant
 
 
 class StartCommandHandler(BaseHandler):
@@ -204,33 +205,18 @@ class ListCommandHandler(BaseHandler):
             await handle_session_recovery(update, context)
             return
 
-        from main import get_user_role
-
-        role = get_user_role(user_id)
         if self.user_logger:
             self.user_logger.log_user_action(
                 user_id, "command_start", {"command": "/list"}
             )
-        _record_action(context, "/list:start")
-
         participants = await self.list_use_case.execute()
 
         if not participants:
-            empty_keyboard = InlineKeyboardMarkup(
-                [
-                    [
-                        InlineKeyboardButton(
-                            "➕ Добавить участника", callback_data="main_add"
-                        )
-                    ],
-                    [InlineKeyboardButton("🏠 Главное меню", callback_data="main_menu")],
-                ]
-            )
-
+            keyboard = self.ui_factory.create_add_participant_form()
             await update.message.reply_text(
                 "📋 **Список участников пуст**\n\nДобавьте первого участника:",
                 parse_mode="Markdown",
-                reply_markup=empty_keyboard,
+                reply_markup=keyboard,
             )
             if self.user_logger:
                 self.user_logger.log_user_action(
@@ -238,21 +224,21 @@ class ListCommandHandler(BaseHandler):
                 )
             return
 
-        message = f"📋 **Список участников ({len(participants)} чел.):**\n\n"
+        lines = [format_participant(p) for p in participants]
+        message = "📋 **Список участников:**\n\n" + "\n".join(
+            f"- {line}" for line in lines
+        )
+        keyboard = self.ui_factory.create_success_keyboard()
+        await update.message.reply_text(
+            message, parse_mode="Markdown", reply_markup=keyboard
+        )
+
         if self.user_logger:
             self.user_logger.log_user_action(
-                user_id, "command_end", {"command": "/list", "count": len(participants)}
+                user_id,
+                "command_end",
+                {"command": "/list", "count": len(participants)},
             )
-
-        for p in participants:
-            role_emoji = "👤" if p.Role == "CANDIDATE" else "👨‍💼"
-            department = f" ({p.Department})" if p.Role == "TEAM" and p.Department else ""
-
-            message += f"{role_emoji} **{p.FullNameRU}**\n"
-            message += f"   • Роль: {p.Role}{department}\n"
-            message += f"   • ID: {p.id}\n\n"
-
-        await _send_response_with_menu_button(update, message)
 
     async def handle(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         return await self._handle(update, context)
