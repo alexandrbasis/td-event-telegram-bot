@@ -1,6 +1,6 @@
 import unittest
 
-from utils.validators import validate_participant_data
+from src.utils.validators import validate_participant_data
 
 
 class ValidateParticipantDataTestCase(unittest.TestCase):

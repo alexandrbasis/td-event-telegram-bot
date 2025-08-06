@@ -1,20 +1,16 @@
-import sys
-from pathlib import Path
 from datetime import datetime
 from unittest.mock import Mock
 
 import pytest
 
-sys.path.append(str(Path(__file__).resolve().parents[3] / "src"))
-
-from application.event_handlers.participant_event_listener import (
+from src.application.event_handlers.participant_event_listener import (
     ParticipantEventListener,
 )
-from domain.events.participant_events import (
+from src.domain.events.participant_events import (
     ParticipantAddedEvent,
     ParticipantUpdatedEvent,
 )
-from models.participant import Participant
+from src.models.participant import Participant
 
 
 class TestParticipantEventListener:

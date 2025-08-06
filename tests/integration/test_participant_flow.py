@@ -1,15 +1,11 @@
-import sys
-from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
 
-sys.path.append(str(Path(__file__).resolve().parents[2] / "src"))
-
 from tests.fixtures.container import create_test_container
-from application.controllers.participant_controller import MAIN_MENU
-from states import COLLECTING_DATA
+from src.application.controllers.participant_controller import MAIN_MENU
+from src.states import COLLECTING_DATA
 
 
 class TestCompleteParticipantFlow:

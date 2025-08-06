@@ -1,5 +1,5 @@
 import unittest
-from services.participant_service import (
+from src.services.participant_service import (
     merge_participant_data,
     detect_changes,
     update_single_field,

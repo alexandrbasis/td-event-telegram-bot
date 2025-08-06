@@ -1,7 +1,7 @@
 import unittest
 
 from main import get_missing_fields, get_missing_field_keys
-from services.participant_service import FIELD_LABELS
+from src.services.participant_service import FIELD_LABELS
 
 class MissingFieldsTestCase(unittest.TestCase):
     def test_department_required_for_team(self):

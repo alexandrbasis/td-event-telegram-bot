@@ -1,9 +1,9 @@
 import unittest
 import sqlite3
-from database import add_participant, get_participant_by_id, init_database
+from src.database import add_participant, get_participant_by_id, init_database
 
 # Временно переопределяем путь к БД для тестов
-import database
+import src.database as database
 
 database.DB_PATH = ":memory:"
 

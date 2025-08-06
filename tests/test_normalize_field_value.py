@@ -1,5 +1,5 @@
 import unittest
-from parsers.participant_parser import normalize_field_value
+from src.parsers.participant_parser import normalize_field_value
 
 # Нормализатор инициализируется автоматически, не нужно загружать кэш
 

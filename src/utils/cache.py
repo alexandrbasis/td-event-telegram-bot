@@ -17,8 +17,8 @@ cache = SimpleCache()
 
 def load_reference_data():
     """Load cities and departments into cache."""
-    from constants import ISRAEL_CITIES
-    from utils.field_normalizer import field_normalizer
+    from src.constants import ISRAEL_CITIES
+    from src.utils.field_normalizer import field_normalizer
 
     # Теперь департаменты берем из нормализатора
     cache.set("departments", field_normalizer.DEPARTMENT_MAPPINGS)

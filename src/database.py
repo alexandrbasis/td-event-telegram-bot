@@ -2,7 +2,7 @@ import sqlite3
 import logging
 from typing import List, Dict, Optional
 
-from shared.exceptions import (
+from src.shared.exceptions import (
     BotException,
     ParticipantNotFoundError,
     DuplicateParticipantError,

@@ -1,4 +1,4 @@
-from presentation.handlers.base_handler import BaseHandler
+from src.presentation.handlers.base_handler import BaseHandler
 
 
 class PlaceholderConversationHandler(BaseHandler):

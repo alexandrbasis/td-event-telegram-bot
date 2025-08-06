@@ -1,12 +1,7 @@
-import sys
-from pathlib import Path
-
 import pytest
 from unittest.mock import Mock
 
-sys.path.append(str(Path(__file__).resolve().parents[3] / "src"))
-
-from shared.event_dispatcher import EventDispatcher
+from src.shared.event_dispatcher import EventDispatcher
 
 
 class TestEvent:

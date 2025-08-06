@@ -1,16 +1,11 @@
-import sys
-from pathlib import Path
-
 import pytest
 from unittest.mock import AsyncMock, Mock
 
-sys.path.append(str(Path(__file__).resolve().parents[3] / "src"))
-
-from application.use_cases.add_participant import (
+from src.application.use_cases.add_participant import (
     AddParticipantCommand,
     AddParticipantUseCase,
 )
-from models.participant import Participant
+from src.models.participant import Participant
 
 
 class TestAddParticipantUseCase:

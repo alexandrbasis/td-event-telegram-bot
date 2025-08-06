@@ -1,10 +1,10 @@
 import unittest
 import sqlite3
 
-import database
-from database import init_database
-from repositories.participant_repository import SqliteParticipantRepository
-from services.participant_service import ParticipantService
+import src.database as database
+from src.database import init_database
+from src.repositories.participant_repository import SqliteParticipantRepository
+from src.services.participant_service import ParticipantService
 
 # use in-memory database
 

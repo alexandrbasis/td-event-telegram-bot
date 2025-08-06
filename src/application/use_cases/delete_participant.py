@@ -2,7 +2,7 @@ import logging
 from dataclasses import dataclass
 from typing import Optional
 
-from services.participant_service import ParticipantService
+from src.services.participant_service import ParticipantService
 from .decorators import log_use_case
 
 

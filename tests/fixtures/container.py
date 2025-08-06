@@ -1,9 +1,4 @@
-import sys
-from pathlib import Path
-
-sys.path.append(str(Path(__file__).resolve().parents[2] / "src"))
-
-from infrastructure.container import Container
+from src.infrastructure.container import Container
 
 
 def create_test_container():
