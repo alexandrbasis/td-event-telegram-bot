@@ -126,7 +126,7 @@ def compose_middleware(handler, middlewares):
         if result is None:
             return
         update, context = result
-        return await handler.handle_with_logging(update, context)
+        return await handler.handle(update, context)
 
     return wrapped
 

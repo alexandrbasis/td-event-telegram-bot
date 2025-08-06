@@ -183,6 +183,7 @@ class HelpCommandHandler(BaseHandler):
 "Кто живет в комнате 203A?"
         """
 
+        # Respond with help text and return user to main menu
         await _send_response_with_menu_button(update, help_text)
         if self.user_logger:
             self.user_logger.log_user_action(
