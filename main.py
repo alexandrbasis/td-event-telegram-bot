@@ -27,10 +27,15 @@ from src.utils.decorators import require_role
 from src.utils.cache import load_reference_data
 from src.utils.timeouts import set_edit_timeout, clear_expired_edit
 from src.utils.user_logger import UserActionLogger
-from src.utils.session_recovery import detect_interrupted_session, handle_session_recovery
+from src.utils.session_recovery import (
+    detect_interrupted_session,
+    handle_session_recovery,
+)
 from src.database import init_database
 from src.repositories.participant_repository import SqliteParticipantRepository
-from src.repositories.airtable_participant_repository import AirtableParticipantRepository
+from src.repositories.airtable_participant_repository import (
+    AirtableParticipantRepository,
+)
 from src.infrastructure.container import Container
 
 try:
@@ -57,11 +62,12 @@ from src.parsers.participant_parser import (
 )
 from src.services.participant_service import (
     merge_participant_data,
-    format_participant_block,
     detect_changes,
     update_single_field,
-    get_edit_keyboard,
     FIELD_LABELS,
+)
+from src.presentation.ui.keyboard_factory import (
+    get_edit_keyboard,
     get_gender_selection_keyboard,
     get_gender_selection_keyboard_simple,
     get_role_selection_keyboard,
@@ -72,6 +78,7 @@ from src.services.participant_service import (
     get_role_selection_keyboard_required,
     get_department_selection_keyboard_required,
 )
+from src.presentation.ui.formatters import MessageFormatter
 from src.utils.validators import validate_participant_data
 from src.shared.exceptions import (
     BotException,
@@ -807,7 +814,7 @@ async def show_confirmation(
     logger.info(f"Showing confirmation for user {user_id}")
     logger.debug(f"user_data keys: {list(context.user_data.keys())}")
     confirmation_text = "🔍 Вот что удалось распознать. Всё правильно?\n\n"
-    confirmation_text += format_participant_block(participant_data)
+    confirmation_text += MessageFormatter.format_participant_info(participant_data)
     confirmation_text += '\n\n✅ Нажмите "Сохранить", чтобы завершить, или выберите поле для исправления.'
     keyboard = get_edit_keyboard(participant_data)
     logger.debug(f"Generated keyboard with {len(keyboard.inline_keyboard)} rows")
@@ -1032,7 +1039,7 @@ async def show_interactive_missing_field(
 def format_status_message(participant_data: Dict) -> str:
     """Creates a status message with filled data and missing fields."""
     message = "📝 **Процесс добавления:**\n\n"
-    message += format_participant_block(participant_data)
+    message += MessageFormatter.format_participant_info(participant_data)
     message += "\n\n"
 
     missing = get_missing_fields(participant_data)
@@ -1884,7 +1891,7 @@ async def process_participant_confirmation(
             "✏️ **Изменено:**\n"
             + "\n".join(changes)
             + "\n\n👤 **Итоговые данные:**\n"
-            + format_participant_block(participant_data)
+            + MessageFormatter.format_participant_info(participant_data)
             + "\n\n✅ **Что делать дальше?**\n"
             "- Напишите **ДА** или **НЕТ**\n"
             "- Или пришлите новые исправления"
