@@ -7,7 +7,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent / "src"))
 
-from infrastructure.container import Container
+from src.infrastructure.container import Container
 
 import traceback
 from collections import defaultdict
@@ -27,17 +27,17 @@ from telegram.ext import (
     MessageHandler,
     filters,
 )
-from presentation.middleware import AuthMiddleware, LoggingMiddleware
-import config
-from config import BOT_TOKEN, BOT_USERNAME, COORDINATOR_IDS, VIEWER_IDS
-from utils.decorators import require_role
-from utils.cache import load_reference_data
-from utils.timeouts import set_edit_timeout, clear_expired_edit
-from utils.user_logger import UserActionLogger
-from utils.session_recovery import detect_interrupted_session, handle_session_recovery
-from database import init_database
-from repositories.participant_repository import SqliteParticipantRepository
-from repositories.airtable_participant_repository import AirtableParticipantRepository
+from src.presentation.middleware import AuthMiddleware, LoggingMiddleware
+import src.config as config
+from src.config import BOT_TOKEN, BOT_USERNAME, COORDINATOR_IDS, VIEWER_IDS
+from src.utils.decorators import require_role
+from src.utils.cache import load_reference_data
+from src.utils.timeouts import set_edit_timeout, clear_expired_edit
+from src.utils.user_logger import UserActionLogger
+from src.utils.session_recovery import detect_interrupted_session, handle_session_recovery
+from src.database import init_database
+from src.repositories.participant_repository import SqliteParticipantRepository
+from src.repositories.airtable_participant_repository import AirtableParticipantRepository
 
 try:
     from pyairtable.api.exceptions import AirtableApiError
@@ -52,16 +52,16 @@ except ImportError:
         pass
 
 
-from services.participant_service import ParticipantService, SearchResult
-from models.participant import Participant
-from parsers.participant_parser import (
+from src.services.participant_service import ParticipantService, SearchResult
+from src.models.participant import Participant
+from src.parsers.participant_parser import (
     parse_participant_data,
     is_template_format,
     parse_template_format,
     parse_unstructured_text,
     normalize_field_value,
 )
-from services.participant_service import (
+from src.services.participant_service import (
     merge_participant_data,
     format_participant_block,
     detect_changes,
@@ -78,16 +78,16 @@ from services.participant_service import (
     get_role_selection_keyboard_required,
     get_department_selection_keyboard_required,
 )
-from utils.validators import validate_participant_data
-from shared.exceptions import (
+from src.utils.validators import validate_participant_data
+from src.shared.exceptions import (
     BotException,
     ParticipantNotFoundError,
     ValidationError,
     DatabaseError,
 )
-from messages import MESSAGES
-from constants import GENDER_DISPLAY, ROLE_DISPLAY, DEPARTMENT_DISPLAY
-from states import (
+from src.messages import MESSAGES
+from src.constants import GENDER_DISPLAY, ROLE_DISPLAY, DEPARTMENT_DISPLAY
+from src.states import (
     CONFIRMING_DATA,
     CONFIRMING_DUPLICATE,
     COLLECTING_DATA,
