@@ -202,14 +202,12 @@ class HelpCommandHandler(BaseHandler):
 
 class ListCommandHandler(BaseHandler):
     def __init__(self, container, list_use_case, ui_factory):
-        if container is None:
-            raise ValueError("Container is required")
+        super().__init__(container)
         if list_use_case is None:
             raise ValueError("list_use_case cannot be None")
         if ui_factory is None:
             raise ValueError("ui_factory cannot be None")
 
-        super().__init__(container)
         self.list_use_case = list_use_case
         self.ui_factory = ui_factory
         self._handle = require_role("viewer")(self._handle)
