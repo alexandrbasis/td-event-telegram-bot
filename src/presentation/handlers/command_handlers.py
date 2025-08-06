@@ -9,7 +9,7 @@ from utils.decorators import require_role
 from utils.session_recovery import detect_interrupted_session, handle_session_recovery
 from messages import MESSAGES
 from states import COLLECTING_DATA
-from utils.bot_helpers import _record_action, _log_session_end, cleanup_on_error
+from utils.bot_helpers import _record_action, _log_session_end
 from presentation.ui.formatters.participant_formatter import format_participant
 from config import COORDINATOR_IDS, VIEWER_IDS
 
@@ -52,7 +52,9 @@ class AddCommandHandler(BaseHandler):
     def __init__(self, container, message_service):
         super().__init__(container)
         self.message_service = message_service
-        self._handle = require_role("coordinator")(cleanup_on_error(self._handle))
+        from main import smart_cleanup_on_error
+
+        self._handle = require_role("coordinator")(smart_cleanup_on_error(self._handle))
 
     async def _handle(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         user_id = update.effective_user.id
@@ -289,7 +291,9 @@ class SearchCommandHandler(BaseHandler):
                     {"command": "/search", "count": len(results)},
                 )
             return ConversationHandler.END
-        return await self.ui_service.show_search_prompt(update, context, is_callback=False)
+        return await self.ui_service.show_search_prompt(
+            update, context, is_callback=False
+        )
 
     async def handle(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         return await self._handle(update, context)
