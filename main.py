@@ -51,7 +51,6 @@ except ImportError:
         pass
 
 
-from src.services.participant_service import ParticipantService, SearchResult
 from src.models.participant import Participant
 from src.parsers.participant_parser import (
     parse_participant_data,
@@ -61,6 +60,8 @@ from src.parsers.participant_parser import (
     normalize_field_value,
 )
 from src.services.participant_service import (
+    ParticipantService,
+    SearchResult,
     merge_participant_data,
     detect_changes,
     update_single_field,
@@ -1920,16 +1921,8 @@ async def process_participant_confirmation(
 @log_state_transitions
 
 
-# ✅ ДОБАВИТЬ: Новая функция форматирования
 def format_participant_full_info(data: Dict) -> str:
     """Форматирует полную информацию об участнике для финального отображения."""
-    from constants import (
-        GENDER_DISPLAY,
-        ROLE_DISPLAY,
-        SIZE_DISPLAY,
-        DEPARTMENT_DISPLAY,
-    )
-
     participant_id = data.get("id")
     id_display = str(participant_id) if participant_id else "N/A"
     info = f"👤 **{data.get('FullNameRU', 'Не указано')}** (ID: {id_display})\n"
@@ -1938,7 +1931,7 @@ def format_participant_full_info(data: Dict) -> str:
         info += f"🌍 English: {data['FullNameEN']}\n"
 
     info += f"⚥ Пол: {GENDER_DISPLAY.get(data.get('Gender', ''), 'Не указано')}\n"
-    info += f"👕 Размер: {SIZE_DISPLAY.get(data.get('Size', ''), 'Не указано')}\n"
+    info += f"👕 Размер: {data.get('Size', 'Не указано')}\n"
     info += f"⛪ Церковь: {data.get('Church', 'Не указано')}\n"
     info += f"👥 Роль: {ROLE_DISPLAY.get(data.get('Role', ''), 'Не указано')}\n"
 
@@ -1954,8 +1947,6 @@ def format_participant_full_info(data: Dict) -> str:
 
     return info
 
-
-# ✅ ДОБАВИТЬ: Обработчик кнопки редактирования
 @require_role("coordinator")
 @log_state_transitions
 async def handle_edit_participant_callback(
