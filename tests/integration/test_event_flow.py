@@ -1,20 +1,16 @@
-import sys
-from pathlib import Path
 from datetime import datetime
 from unittest.mock import AsyncMock, Mock
 import asyncio
 
-sys.path.append(str(Path(__file__).resolve().parents[3] / "src"))
-
-from application.use_cases.add_participant import (
+from src.application.use_cases.add_participant import (
     AddParticipantUseCase,
     AddParticipantCommand,
 )
-from application.event_handlers.participant_event_listener import (
+from src.application.event_handlers.participant_event_listener import (
     ParticipantEventListener,
 )
-from shared.event_dispatcher import EventDispatcher
-from domain.events.participant_events import ParticipantAddedEvent
+from src.shared.event_dispatcher import EventDispatcher
+from src.domain.events.participant_events import ParticipantAddedEvent
 
 
 class TestEventFlow:
@@ -47,7 +43,7 @@ class TestEventFlow:
         self.validator.validate.return_value = Mock(is_valid=True)
         self.duplicate_checker.check_duplicate.return_value = None
 
-        from models.participant import Participant
+        from src.models.participant import Participant
 
         participant = Participant.from_dict({"FullNameRU": "Test", "Gender": "M"})
         participant.id = 1

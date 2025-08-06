@@ -1,5 +1,5 @@
 import unittest
-from services.participant_service import (
+from src.services.participant_service import (
     get_edit_keyboard,
     get_gender_selection_keyboard_simple,
     get_role_selection_keyboard,

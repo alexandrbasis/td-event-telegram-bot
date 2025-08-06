@@ -1,12 +1,12 @@
 from telegram import Update
 from telegram.ext import ContextTypes
 
-from application.use_cases.add_participant import AddParticipantCommand
-from application.use_cases.update_participant import UpdateParticipantCommand
-from application.use_cases.search_participant import SearchParticipantsQuery
-from shared.exceptions import ValidationError
-from presentation.ui import UIFactory
-from states import COLLECTING_DATA
+from src.application.use_cases.add_participant import AddParticipantCommand
+from src.application.use_cases.update_participant import UpdateParticipantCommand
+from src.application.use_cases.search_participant import SearchParticipantsQuery
+from src.shared.exceptions import ValidationError
+from src.presentation.ui import UIFactory
+from src.states import COLLECTING_DATA
 
 MAIN_MENU = 0
 
@@ -38,7 +38,7 @@ class ParticipantController:
             await update.message.reply_text(message, reply_markup=keyboard)
             return MAIN_MENU
         except ValidationError as exc:
-            from presentation.ui.components.validation_ui import show_validation_errors
+            from src.presentation.ui.components.validation_ui import show_validation_errors
 
             await show_validation_errors(update, exc.errors)
             return COLLECTING_DATA

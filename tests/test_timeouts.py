@@ -1,7 +1,7 @@
 import unittest
 from types import SimpleNamespace
 from unittest.mock import MagicMock
-from utils.timeouts import set_edit_timeout, is_edit_expired, clear_expired_edit
+from src.utils.timeouts import set_edit_timeout, is_edit_expired, clear_expired_edit
 import time
 
 

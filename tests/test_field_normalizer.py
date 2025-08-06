@@ -1,5 +1,5 @@
 import unittest
-from utils.field_normalizer import (
+from src.utils.field_normalizer import (
     field_normalizer,
     normalize_gender,
     normalize_role,

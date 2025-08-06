@@ -2,7 +2,7 @@ import unittest
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from presentation.handlers.callback_handlers import SearchCallbackHandler
+from src.presentation.handlers.callback_handlers import SearchCallbackHandler
 from main import cancel_callback, SEARCHING_PARTICIPANTS
 
 
@@ -18,7 +18,7 @@ class SearchFlowTestCase(unittest.IsolatedAsyncioTestCase):
             return SEARCHING_PARTICIPANTS
 
         with patch(
-            "presentation.handlers.callback_handlers._show_search_prompt",
+            "src.presentation.handlers.callback_handlers._show_search_prompt",
             side_effect=mock_show_search_prompt,
         ), patch("main.user_logger"), patch(
             "main._cleanup_messages", new=AsyncMock()
@@ -27,9 +27,9 @@ class SearchFlowTestCase(unittest.IsolatedAsyncioTestCase):
         ), patch(
             "main._log_session_end"
         ), patch(
-            "utils.decorators.VIEWER_IDS", [1]
+            "src.utils.decorators.VIEWER_IDS", [1]
         ), patch(
-            "utils.decorators.COORDINATOR_IDS", []
+            "src.utils.decorators.COORDINATOR_IDS", []
         ):
             container = SimpleNamespace(
                 logger=lambda: MagicMock(), user_logger=lambda: MagicMock()

@@ -5,10 +5,10 @@ import time
 from pyairtable.api.types import RecordDict
 from pyairtable.formulas import match
 
-from repositories.participant_repository import BaseParticipantRepository
-from models.participant import Participant
-from repositories.airtable_client import AirtableClient
-from shared.exceptions import (
+from src.repositories.participant_repository import BaseParticipantRepository
+from src.models.participant import Participant
+from src.repositories.airtable_client import AirtableClient
+from src.shared.exceptions import (
     ParticipantNotFoundError,
     ValidationError,
     BotException,

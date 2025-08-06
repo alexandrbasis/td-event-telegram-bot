@@ -1,14 +1,14 @@
 import unittest
 import sqlite3
 
-from database import (
+from src.database import (
     get_participant_by_id,
     find_participant_by_name,
     init_database,
 )
-from repositories.participant_repository import SqliteParticipantRepository
+from src.repositories.participant_repository import SqliteParticipantRepository
 
-import database
+import src.database as database
 
 database.DB_PATH = ":memory:"
 

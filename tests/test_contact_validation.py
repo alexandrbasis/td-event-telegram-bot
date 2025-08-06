@@ -1,6 +1,6 @@
 import unittest
 
-from parsers.participant_parser import (
+from src.parsers.participant_parser import (
     is_valid_email,
     is_valid_phone,
     extract_contact_info,

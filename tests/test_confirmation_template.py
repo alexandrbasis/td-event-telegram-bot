@@ -1,5 +1,5 @@
 import unittest
-from parsers.participant_parser import parse_template_format
+from src.parsers.participant_parser import parse_template_format
 
 
 class ConfirmationTemplateTestCase(unittest.TestCase):

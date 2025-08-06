@@ -1,17 +1,12 @@
-import sys
-from pathlib import Path
-
 import pytest
 from unittest.mock import AsyncMock, Mock
 
-sys.path.append(str(Path(__file__).resolve().parents[3] / "src"))
-
-from application.use_cases.update_participant import (
+from src.application.use_cases.update_participant import (
     UpdateParticipantCommand,
     UpdateParticipantUseCase,
 )
-from models.participant import Participant
-from shared.exceptions import DuplicateParticipantError
+from src.models.participant import Participant
+from src.shared.exceptions import DuplicateParticipantError
 
 
 class TestUpdateParticipantUseCase:

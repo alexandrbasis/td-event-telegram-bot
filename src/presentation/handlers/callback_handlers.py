@@ -2,8 +2,8 @@ from dataclasses import asdict
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import ContextTypes, ConversationHandler
 
-from presentation.handlers.base_handler import BaseHandler
-from utils.decorators import require_role
+from src.presentation.handlers.base_handler import BaseHandler
+from src.utils.decorators import require_role
 from main import (
     _add_message_to_cleanup,
     _cleanup_messages,
@@ -17,11 +17,11 @@ from main import (
     show_confirmation,
     cleanup_user_data_safe,
 )
-from states import COLLECTING_DATA, CONFIRMING_DUPLICATE
-from messages import MESSAGES
-from application.use_cases.add_participant import AddParticipantCommand
-from application.use_cases.update_participant import UpdateParticipantCommand
-from application.use_cases.search_participant import SearchParticipantsQuery
+from src.states import COLLECTING_DATA, CONFIRMING_DUPLICATE
+from src.messages import MESSAGES
+from src.application.use_cases.add_participant import AddParticipantCommand
+from src.application.use_cases.update_participant import UpdateParticipantCommand
+from src.application.use_cases.search_participant import SearchParticipantsQuery
 
 
 class AddCallbackHandler(BaseHandler):

@@ -1,5 +1,5 @@
 import unittest
-from parsers.participant_parser import (
+from src.parsers.participant_parser import (
     parse_participant_data,
     is_template_format,
     parse_template_format,
@@ -7,7 +7,7 @@ from parsers.participant_parser import (
     detect_field_update_intent,
     _smart_name_classification,
 )
-from utils.cache import load_reference_data, cache
+from src.utils.cache import load_reference_data, cache
 
 load_reference_data()
 

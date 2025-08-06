@@ -1,5 +1,8 @@
 import logging
 import time
+import logging
+import time
+
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import ContextTypes
 
@@ -36,7 +39,7 @@ async def handle_session_recovery(
     """Предлагает пользователю восстановить прерванную сессию."""
     user_id = update.effective_user.id if update.effective_user else None
 
-    from utils.user_logger import UserActionLogger
+    from src.utils.user_logger import UserActionLogger
 
     user_logger = UserActionLogger()
     user_logger.log_user_action(
