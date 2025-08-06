@@ -25,6 +25,7 @@ from telegram.ext import (
     MessageHandler,
     filters,
 )
+from presentation.middleware import AuthMiddleware, LoggingMiddleware
 import config
 from config import BOT_TOKEN, BOT_USERNAME, COORDINATOR_IDS, VIEWER_IDS
 from utils.decorators import require_role
@@ -115,13 +116,49 @@ def create_handlers(container):
     }
 
 
+def compose_middleware(handler, middlewares):
+    async def wrapped(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        result = (update, context)
+        for mw in middlewares:
+            if result is None:
+                return
+            result = await mw(*result)
+        if result is None:
+            return
+        update, context = result
+        return await handler.handle_with_logging(update, context)
+
+    return wrapped
+
+
 def create_application():
     """Создание и настройка приложения."""
     from infrastructure.container import Container
 
     container = Container()
     container.configure_events()
+
+    auth_middleware = AuthMiddleware(container)
+    logging_middleware = LoggingMiddleware()
+
     application = Application.builder().token(BOT_TOKEN).build()
+
+    command_map = {
+        "start_handler": "start",
+        "add_handler": "add",
+        "help_handler": "help",
+        "list_handler": "list",
+        "search_handler": "search",
+        "cancel_handler": "cancel",
+    }
+
+    for provider_name, command in command_map.items():
+        handler_instance = getattr(container, provider_name)()
+        wrapped = compose_middleware(
+            handler_instance, [auth_middleware, logging_middleware]
+        )
+        application.add_handler(CommandHandler(command, wrapped))
+
     return application, container
 
 
