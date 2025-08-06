@@ -47,7 +47,7 @@ class TestEventFlow:
         self.validator.validate.return_value = Mock(is_valid=True)
         self.duplicate_checker.check_duplicate.return_value = None
 
-        from domain.models.participant import Participant
+        from models.participant import Participant
 
         participant = Participant.from_dict({"FullNameRU": "Test", "Gender": "M"})
         participant.id = 1

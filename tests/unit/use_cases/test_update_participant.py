@@ -10,7 +10,7 @@ from application.use_cases.update_participant import (
     UpdateParticipantCommand,
     UpdateParticipantUseCase,
 )
-from domain.models.participant import Participant
+from models.participant import Participant
 from shared.exceptions import DuplicateParticipantError
 
 

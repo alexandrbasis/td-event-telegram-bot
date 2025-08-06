@@ -2,7 +2,7 @@ from dataclasses import dataclass
 from datetime import datetime
 import logging
 
-from domain.models.participant import Participant
+from models.participant import Participant
 from domain.services.participant_validator import ParticipantValidator
 from domain.services.duplicate_checker import DuplicateCheckerService
 from domain.specifications.participant_specifications import (
