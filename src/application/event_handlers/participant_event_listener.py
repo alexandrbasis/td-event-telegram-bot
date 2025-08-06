@@ -1,6 +1,10 @@
 import logging
+import sys
+from pathlib import Path
 
-from domain.events.participant_events import (
+sys.path.append(str(Path(__file__).resolve().parents[3]))
+
+from src.domain.events.participant_events import (
     ParticipantAddedEvent,
     ParticipantUpdatedEvent,
 )
