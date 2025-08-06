@@ -2361,6 +2361,7 @@ def main():
     # Initialize dependency container and application
     global participant_service
     application, container = create_application()
+    container.configure_events()
     container.config.from_dict(
         {
             "database": {"path": "participants.db"},
