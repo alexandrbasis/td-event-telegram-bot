@@ -5,7 +5,9 @@ import time
 import sys
 from pathlib import Path
 
-sys.path.append(str(Path(__file__).resolve().parent / "src"))
+sys.path.insert(0, str(Path(__file__).resolve().parent / "src"))
+
+from infrastructure.container import Container
 
 import traceback
 from collections import defaultdict
@@ -133,8 +135,6 @@ def compose_middleware(handler, middlewares):
 
 def create_application():
     """Создание и настройка приложения."""
-    from infrastructure.container import Container
-
     container = Container()
     container.configure_events()
 
