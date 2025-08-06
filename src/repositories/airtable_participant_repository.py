@@ -5,10 +5,10 @@ import time
 from pyairtable.api.types import RecordDict
 from pyairtable.formulas import match
 
-from src.repositories.participant_repository import BaseParticipantRepository
-from src.models.participant import Participant
-from src.repositories.airtable_client import AirtableClient
-from src.shared.exceptions import (
+from repositories.participant_repository import BaseParticipantRepository
+from models.participant import Participant
+from repositories.airtable_client import AirtableClient
+from shared.exceptions import (
     ParticipantNotFoundError,
     ValidationError,
     BotException,
@@ -28,33 +28,33 @@ class AirtableParticipantRepository(BaseParticipantRepository):
     def _participant_to_airtable_fields(self, participant: Participant) -> dict:
         """Convert Participant dataclass to Airtable fields."""
         return {
-            'FullNameRU': participant.FullNameRU,
-            'FullNameEN': participant.FullNameEN or '',
-            'Gender': participant.Gender,
-            'Size': participant.Size or '',
-            'Church': participant.Church or '',
-            'Role': participant.Role or '',
-            'Department': participant.Department or '',
-            'CountryAndCity': participant.CountryAndCity or '',
-            'SubmittedBy': participant.SubmittedBy or '',
-            'ContactInformation': participant.ContactInformation or '',
+            "FullNameRU": participant.FullNameRU,
+            "FullNameEN": participant.FullNameEN or "",
+            "Gender": participant.Gender,
+            "Size": participant.Size or "",
+            "Church": participant.Church or "",
+            "Role": participant.Role or "",
+            "Department": participant.Department or "",
+            "CountryAndCity": participant.CountryAndCity or "",
+            "SubmittedBy": participant.SubmittedBy or "",
+            "ContactInformation": participant.ContactInformation or "",
         }
 
     def _airtable_record_to_participant(self, record: RecordDict) -> Participant:
         """Convert Airtable record to Participant dataclass."""
-        fields = record.get('fields', {})
+        fields = record.get("fields", {})
         return Participant(
-            id=record['id'],  # Airtable record ID
-            FullNameRU=fields.get('FullNameRU', ''),
-            FullNameEN=fields.get('FullNameEN', ''),
-            Gender=fields.get('Gender', 'F'),
-            Size=fields.get('Size', ''),
-            Church=fields.get('Church', ''),
-            Role=fields.get('Role', ''),
-            Department=fields.get('Department', ''),
-            CountryAndCity=fields.get('CountryAndCity', ''),
-            SubmittedBy=fields.get('SubmittedBy', ''),
-            ContactInformation=fields.get('ContactInformation', ''),
+            id=record["id"],  # Airtable record ID
+            FullNameRU=fields.get("FullNameRU", ""),
+            FullNameEN=fields.get("FullNameEN", ""),
+            Gender=fields.get("Gender", "F"),
+            Size=fields.get("Size", ""),
+            Church=fields.get("Church", ""),
+            Role=fields.get("Role", ""),
+            Department=fields.get("Department", ""),
+            CountryAndCity=fields.get("CountryAndCity", ""),
+            SubmittedBy=fields.get("SubmittedBy", ""),
+            ContactInformation=fields.get("ContactInformation", ""),
         )
 
     def add(self, participant: Participant) -> int:
@@ -66,7 +66,7 @@ class AirtableParticipantRepository(BaseParticipantRepository):
             record = self.table.create(fields)
 
             # Возвращаем Airtable record ID как строку
-            record_id = record['id']
+            record_id = record["id"]
             logger.info(f"Successfully added participant with ID: {record_id}")
             return record_id
 
@@ -165,7 +165,7 @@ class AirtableParticipantRepository(BaseParticipantRepository):
             # Convert empty strings to actual empty values for Airtable
             airtable_fields = {}
             for key, value in fields.items():
-                airtable_fields[key] = value if value else ''
+                airtable_fields[key] = value if value else ""
 
             self.table.update(participant_id, airtable_fields)
 
@@ -208,6 +208,6 @@ class AirtableParticipantRepository(BaseParticipantRepository):
         if retry_count > 3:
             raise DatabaseError("Rate limit exceeded after multiple retries")
 
-        wait_time = (2 ** retry_count) * 0.2  # 0.2, 0.4, 0.8, 1.6 seconds
+        wait_time = (2**retry_count) * 0.2  # 0.2, 0.4, 0.8, 1.6 seconds
         logger.warning(f"Rate limited, waiting {wait_time} seconds...")
         time.sleep(wait_time)

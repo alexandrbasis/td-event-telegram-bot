@@ -2,13 +2,13 @@ from datetime import datetime
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import ContextTypes, ConversationHandler
 
-from src.application.use_cases.search_participant import SearchParticipantsQuery
-from src.application.use_cases.update_participant import UpdateParticipantCommand
-from src.presentation.handlers.base_handler import BaseHandler
-from src.utils.decorators import require_role
-from src.utils.session_recovery import detect_interrupted_session, handle_session_recovery
-from src.messages import MESSAGES
-from src.states import COLLECTING_DATA
+from application.use_cases.search_participant import SearchParticipantsQuery
+from application.use_cases.update_participant import UpdateParticipantCommand
+from presentation.handlers.base_handler import BaseHandler
+from utils.decorators import require_role
+from utils.session_recovery import detect_interrupted_session, handle_session_recovery
+from messages import MESSAGES
+from states import COLLECTING_DATA
 from main import (
     _cleanup_messages,
     _show_main_menu,
@@ -17,7 +17,7 @@ from main import (
     _send_response_with_menu_button,
     _show_search_prompt,
 )
-from src.presentation.ui.formatters.participant_formatter import format_participant
+from presentation.ui.formatters.participant_formatter import format_participant
 
 
 class StartCommandHandler(BaseHandler):
@@ -57,9 +57,7 @@ class AddCommandHandler(BaseHandler):
         super().__init__(container)
         from main import cleanup_on_error
 
-        self._handle = require_role("coordinator")(
-            cleanup_on_error(self._handle)
-        )
+        self._handle = require_role("coordinator")(cleanup_on_error(self._handle))
 
     async def _handle(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         user_id = update.effective_user.id
@@ -118,7 +116,6 @@ class AddCommandHandler(BaseHandler):
         return await self._handle(update, context)
 
 
-
 class UpdateParticipantHandler(BaseHandler):
     def __init__(self, container):
         super().__init__(container)
@@ -132,12 +129,17 @@ class UpdateParticipantHandler(BaseHandler):
         if participant_id is None:
             await update.message.reply_text("❌ Участник не выбран")
             return
-        command = UpdateParticipantCommand(user_id=user_id, participant_id=participant_id, participant_data=data)
+        command = UpdateParticipantCommand(
+            user_id=user_id, participant_id=participant_id, participant_data=data
+        )
         participant = await self.update_use_case.execute(command)
-        await update.message.reply_text(f"✏️ Участник '{participant.full_name_ru}' обновлен")
+        await update.message.reply_text(
+            f"✏️ Участник '{participant.full_name_ru}' обновлен"
+        )
 
     async def handle(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         return await self._handle(update, context)
+
 
 class HelpCommandHandler(BaseHandler):
     def __init__(self, container):
@@ -267,15 +269,24 @@ class SearchCommandHandler(BaseHandler):
         parts = text.split(maxsplit=1)
         if len(parts) > 1:
             query_text = parts[1]
-            results = await self.search_use_case.execute(SearchParticipantsQuery(query_text, user_id=user_id))
+            results = await self.search_use_case.execute(
+                SearchParticipantsQuery(query_text, user_id=user_id)
+            )
             if results:
-                formatted = [f"- {r.participant.FullNameRU} (ID: {r.participant.id})" for r in results]
+                formatted = [
+                    f"- {r.participant.FullNameRU} (ID: {r.participant.id})"
+                    for r in results
+                ]
                 message = "\n".join(formatted)
             else:
                 message = "❌ Ничего не найдено"
             await _send_response_with_menu_button(update, message)
             if self.user_logger:
-                self.user_logger.log_user_action(user_id, "command_end", {"command": "/search", "count": len(results)})
+                self.user_logger.log_user_action(
+                    user_id,
+                    "command_end",
+                    {"command": "/search", "count": len(results)},
+                )
             return ConversationHandler.END
         return await _show_search_prompt(update, context, is_callback=False)
 
@@ -306,9 +317,7 @@ class CancelCommandHandler(BaseHandler):
                 self.logger.info("User %s cancelled the add flow.", user_id)
         else:
             if self.logger:
-                self.logger.info(
-                    "User %s cancelled a non-existent operation.", user_id
-                )
+                self.logger.info("User %s cancelled a non-existent operation.", user_id)
 
         await _cleanup_messages(context, update.effective_chat.id)
         await _show_main_menu(update, context, is_return=True)

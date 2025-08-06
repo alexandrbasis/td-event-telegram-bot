@@ -2,7 +2,7 @@ import sqlite3
 import logging
 from typing import List, Dict, Optional
 
-from src.shared.exceptions import (
+from shared.exceptions import (
     BotException,
     ParticipantNotFoundError,
     DuplicateParticipantError,
@@ -52,7 +52,7 @@ class DatabaseConnection:
     def __enter__(self) -> sqlite3.Connection:
         self.conn = sqlite3.connect(DB_PATH)
         self.conn.row_factory = sqlite3.Row
-        sql_logger = logging.getLogger('sql')
+        sql_logger = logging.getLogger("sql")
         self.conn.set_trace_callback(sql_logger.info)
         return self.conn
 
@@ -69,15 +69,15 @@ class DatabaseConnection:
 def _truncate_fields(data: Dict) -> Dict:
     """Truncate long text fields to fit DB limits."""
     result = data.copy()
-    for field, limit in [('FullNameRU', 100), ('FullNameEN', 100), ('Church', 100)]:
+    for field, limit in [("FullNameRU", 100), ("FullNameEN", 100), ("Church", 100)]:
         value = result.get(field)
         if value and len(value) > limit:
             logger.warning("%s truncated to %d chars", field, limit)
             result[field] = value[:limit]
-    contact = result.get('ContactInformation')
+    contact = result.get("ContactInformation")
     if contact and len(contact) > 200:
         logger.warning("ContactInformation truncated to 200 chars")
-        result['ContactInformation'] = contact[:200]
+        result["ContactInformation"] = contact[:200]
     return result
 
 
@@ -147,16 +147,16 @@ def add_participant(participant_data: Dict) -> int:
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
-                    participant_data.get('FullNameRU'),
-                    participant_data.get('Gender', 'F'),
-                    participant_data.get('Size'),
-                    participant_data.get('CountryAndCity'),
-                    participant_data.get('Church'),
-                    participant_data.get('Role', 'CANDIDATE'),
-                    participant_data.get('Department'),
-                    participant_data.get('FullNameEN'),
-                    participant_data.get('SubmittedBy'),
-                    participant_data.get('ContactInformation'),
+                    participant_data.get("FullNameRU"),
+                    participant_data.get("Gender", "F"),
+                    participant_data.get("Size"),
+                    participant_data.get("CountryAndCity"),
+                    participant_data.get("Church"),
+                    participant_data.get("Role", "CANDIDATE"),
+                    participant_data.get("Department"),
+                    participant_data.get("FullNameEN"),
+                    participant_data.get("SubmittedBy"),
+                    participant_data.get("ContactInformation"),
                 ),
             )
             participant_id = cursor.lastrowid
@@ -215,7 +215,9 @@ def get_participant_by_id(participant_id: int) -> Optional[Dict]:
         raise BotException("Database error while fetching participant") from e
 
 
-def get_participant_by_id_safe(participant_id: int, context: str = "") -> Optional[Dict]:
+def get_participant_by_id_safe(
+    participant_id: int, context: str = ""
+) -> Optional[Dict]:
     """
     ✅ НОВАЯ ФУНКЦИЯ: безопасное получение участника с контекстным логированием.
 
@@ -255,16 +257,16 @@ def update_participant(participant_id: int, participant_data: Dict) -> bool:
                 WHERE id = ?
                 """,
                 (
-                    participant_data.get('FullNameRU'),
-                    participant_data.get('Gender', 'F'),
-                    participant_data.get('Size'),
-                    participant_data.get('CountryAndCity'),
-                    participant_data.get('Church'),
-                    participant_data.get('Role', 'CANDIDATE'),
-                    participant_data.get('Department'),
-                    participant_data.get('FullNameEN'),
-                    participant_data.get('SubmittedBy'),
-                    participant_data.get('ContactInformation'),
+                    participant_data.get("FullNameRU"),
+                    participant_data.get("Gender", "F"),
+                    participant_data.get("Size"),
+                    participant_data.get("CountryAndCity"),
+                    participant_data.get("Church"),
+                    participant_data.get("Role", "CANDIDATE"),
+                    participant_data.get("Department"),
+                    participant_data.get("FullNameEN"),
+                    participant_data.get("SubmittedBy"),
+                    participant_data.get("ContactInformation"),
                     participant_id,
                 ),
             )
@@ -274,10 +276,14 @@ def update_participant(participant_id: int, participant_data: Dict) -> bool:
                 )
             return True
     except sqlite3.IntegrityError as e:
-        logger.error("Validation error while updating participant %s: %s", participant_id, e)
+        logger.error(
+            "Validation error while updating participant %s: %s", participant_id, e
+        )
         raise ValidationError(str(e)) from e
     except sqlite3.Error as e:
-        logger.error("Database error while updating participant %s: %s", participant_id, e)
+        logger.error(
+            "Database error while updating participant %s: %s", participant_id, e
+        )
         raise BotException("Database error while updating participant") from e
 
 
@@ -319,8 +325,16 @@ def delete_participant(participant_id: int) -> bool:
 
 
 VALID_FIELDS = {
-    'FullNameRU', 'Gender', 'Size', 'CountryAndCity', 'Church',
-    'Role', 'Department', 'FullNameEN', 'SubmittedBy', 'ContactInformation'
+    "FullNameRU",
+    "Gender",
+    "Size",
+    "CountryAndCity",
+    "Church",
+    "Role",
+    "Department",
+    "FullNameEN",
+    "SubmittedBy",
+    "ContactInformation",
 }
 
 

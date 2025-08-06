@@ -1,4 +1,4 @@
-from src.constants import (
+from constants import (
     GENDER_DISPLAY,
     ROLE_DISPLAY,
     SIZE_DISPLAY,
