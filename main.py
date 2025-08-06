@@ -140,7 +140,6 @@ def create_application(container=None):
     """Создание и настройка приложения."""
     if container is None:
         container = Container()
-        container.configure_events()
 
     auth_middleware = AuthMiddleware(container)
     logging_middleware = LoggingMiddleware()
