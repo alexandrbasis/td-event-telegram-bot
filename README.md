@@ -52,6 +52,11 @@ pip install -r requirements.txt
 2.  Создайте файл `.env` в корне проекта:
     ```
     BOT_TOKEN=ваш_токен_здесь
+    # Тип базы данных: sqlite (по умолчанию) или airtable
+    DATABASE_TYPE=sqlite
+    # Для Airtable также задайте токен и ID базы
+    # AIRTABLE_TOKEN=ваш_airtable_token
+    # AIRTABLE_BASE_ID=ваш_airtable_base_id
     ```
 3.  В `config.py` добавьте ваш Telegram ID в `COORDINATOR_IDS`:
     ```python

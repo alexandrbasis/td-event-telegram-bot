@@ -5,15 +5,26 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # Токен бота (получите у @BotFather)
-BOT_TOKEN = os.getenv('BOT_TOKEN', 'YOUR_BOT_TOKEN_HERE')
+BOT_TOKEN = os.getenv("BOT_TOKEN", "YOUR_BOT_TOKEN_HERE")
 
 # Настройки бота
-BOT_USERNAME = 'tresdias_israelbot'
+BOT_USERNAME = "tresdias_israelbot"
+
+# Конфигурация базы данных
+DATABASE_TYPE = os.getenv("DATABASE_TYPE", "sqlite").lower()
+AIRTABLE_TOKEN = os.getenv("AIRTABLE_TOKEN")
+AIRTABLE_BASE_ID = os.getenv("AIRTABLE_BASE_ID")
 
 # Роли пользователей
-COORDINATOR_IDS = [311380449, 5212991086, 649919193, 8086614107, 476732940]  # ID пользователей-координаторов
-VIEWER_IDS = []       # ID пользователей-наблюдателей
+COORDINATOR_IDS = [
+    311380449,
+    5212991086,
+    649919193,
+    8086614107,
+    476732940,
+]  # ID пользователей-координаторов
+VIEWER_IDS = []  # ID пользователей-наблюдателей
 
 # Проверка конфигурации
-if BOT_TOKEN == 'YOUR_BOT_TOKEN_HERE':
+if BOT_TOKEN == "YOUR_BOT_TOKEN_HERE":
     print("⚠️  ВНИМАНИЕ: Установите BOT_TOKEN в файле .env")
