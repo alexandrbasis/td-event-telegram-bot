@@ -20,11 +20,11 @@ from presentation.ui.legacy_keyboards import (
     get_size_selection_keyboard_required,
 )
 from presentation.ui.formatters import MessageFormatter
-from repositories.participant_repository import AbstractParticipantRepository
-from models.participant import Participant
-from database import find_participant_by_name
+from ..repositories.participant_repository import AbstractParticipantRepository
+from ..models.participant import Participant
+from ..database import find_participant_by_name
 from utils.validators import validate_participant_data
-from shared.exceptions import (
+from ..shared.exceptions import (
     DuplicateParticipantError,
     ParticipantNotFoundError,
     ValidationError,
