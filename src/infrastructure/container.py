@@ -12,7 +12,7 @@ class Container(containers.DeclarativeContainer):
     legacy_participant_service = providers.Singleton(
         "services.participant_service.ParticipantService",
         repository=providers.Singleton(
-            "repositories.participant_repository.SqliteParticipantRepository"
+            "repositories.airtable_participant_repository.AirtableParticipantRepository"
         ),
     )
 
@@ -29,10 +29,7 @@ class Container(containers.DeclarativeContainer):
 
     # Repositories
     participant_repository = providers.Factory(
-        "infrastructure.repositories.participant_repository_adapter.ParticipantRepositoryAdapter",
-        legacy_repository=providers.Factory(
-            "repositories.participant_repository.SqliteParticipantRepository"
-        ),
+        "repositories.airtable_participant_repository.AirtableParticipantRepository"
     )
 
     # duplicate_checker = providers.Factory(
