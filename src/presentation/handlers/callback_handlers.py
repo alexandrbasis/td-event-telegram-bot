@@ -4,12 +4,6 @@ from telegram.ext import ContextTypes, ConversationHandler
 
 from src.presentation.handlers.base_handler import BaseHandler
 from src.utils.decorators import require_role
-from main import (
-    get_duplicate_keyboard,
-    get_post_action_keyboard,
-    format_participant_full_info,
-    cleanup_user_data_safe,
-)
 from src.presentation.ui.formatters import MessageFormatter
 from src.states import COLLECTING_DATA, CONFIRMING_DUPLICATE
 from src.messages import MESSAGES
@@ -224,6 +218,12 @@ class SaveConfirmationCallbackHandler(BaseHandler):
         )
 
     async def _handle(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+        from main import (
+            cleanup_user_data_safe,
+            get_duplicate_keyboard,
+            format_participant_full_info,
+        )
+
         query = update.callback_query
         user_id = update.effective_user.id
 
@@ -362,6 +362,8 @@ class DuplicateCallbackHandler(BaseHandler):
         self._handle = smart_cleanup_on_error(log_state_transitions(self._handle))
 
     async def _handle(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+        from main import cleanup_user_data_safe, get_post_action_keyboard
+
         query = update.callback_query
         await query.answer()
 

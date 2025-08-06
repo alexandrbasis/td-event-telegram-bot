@@ -1,9 +1,9 @@
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import ContextTypes
 
-from config import COORDINATOR_IDS, VIEWER_IDS
-from states import SEARCHING_PARTICIPANTS
-from presentation.services.message_service import MessageService
+from src.config import COORDINATOR_IDS, VIEWER_IDS
+from src.states import SEARCHING_PARTICIPANTS
+from src.presentation.services.message_service import MessageService
 
 
 class UIService:

@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 from datetime import datetime
-from domain.models.participant import Participant
+from src.domain.models.participant import Participant
 
 
 @dataclass(frozen=True)

@@ -2,16 +2,16 @@ from datetime import datetime
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import ContextTypes, ConversationHandler
 
-from application.use_cases.search_participant import SearchParticipantsQuery
-from application.use_cases.update_participant import UpdateParticipantCommand
-from presentation.handlers.base_handler import BaseHandler
-from utils.decorators import require_role
-from utils.session_recovery import detect_interrupted_session, handle_session_recovery
-from messages import MESSAGES
-from states import COLLECTING_DATA
-from utils.bot_helpers import _record_action, _log_session_end
-from presentation.ui.formatters.participant_formatter import format_participant
-from config import COORDINATOR_IDS, VIEWER_IDS
+from src.application.use_cases.search_participant import SearchParticipantsQuery
+from src.application.use_cases.update_participant import UpdateParticipantCommand
+from src.presentation.handlers.base_handler import BaseHandler
+from src.utils.decorators import require_role
+from src.utils.session_recovery import detect_interrupted_session, handle_session_recovery
+from src.messages import MESSAGES
+from src.states import COLLECTING_DATA
+from src.utils.bot_helpers import _record_action, _log_session_end
+from src.presentation.ui.formatters.participant_formatter import format_participant
+from src.config import COORDINATOR_IDS, VIEWER_IDS
 
 
 class StartCommandHandler(BaseHandler):

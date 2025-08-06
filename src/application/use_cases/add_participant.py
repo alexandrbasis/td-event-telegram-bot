@@ -2,13 +2,13 @@ from dataclasses import dataclass
 from datetime import datetime
 import logging
 
-from models.participant import Participant
-from domain.services.participant_validator import ParticipantValidator
-from domain.services.duplicate_checker import DuplicateCheckerService
-from domain.specifications.participant_specifications import (
+from src.domain.models.participant import Participant
+from src.domain.services.participant_validator import ParticipantValidator
+from src.domain.services.duplicate_checker import DuplicateCheckerService
+from src.domain.specifications.participant_specifications import (
     TeamRoleRequiresDepartmentSpecification,
 )
-from domain.interfaces.repositories import ParticipantRepositoryInterface
+from src.domain.interfaces.repositories import ParticipantRepositoryInterface
 from ...shared.event_dispatcher import EventDispatcher
 from ...shared.exceptions import DuplicateParticipantError, ValidationError
 from .decorators import log_use_case
@@ -56,7 +56,7 @@ class AddParticipantUseCase:
             raise ValidationError("Department is required for TEAM role")
 
         saved = await self.repository.save(participant)
-        from domain.events.participant_events import ParticipantAddedEvent
+        from src.domain.events.participant_events import ParticipantAddedEvent
 
         event = ParticipantAddedEvent(
             participant=saved, added_by=command.user_id, timestamp=datetime.utcnow()
