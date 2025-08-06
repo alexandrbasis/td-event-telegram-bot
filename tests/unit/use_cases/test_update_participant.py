@@ -5,7 +5,7 @@ from src.application.use_cases.update_participant import (
     UpdateParticipantCommand,
     UpdateParticipantUseCase,
 )
-from src.models.participant import Participant
+from src.domain.models.participant import Participant
 from src.shared.exceptions import DuplicateParticipantError
 
 

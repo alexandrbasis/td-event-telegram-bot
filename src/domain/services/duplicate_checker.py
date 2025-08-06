@@ -1,5 +1,5 @@
-from domain.interfaces.repositories import ParticipantRepositoryInterface
-from models.participant import Participant
+from src.domain.interfaces.repositories import ParticipantRepositoryInterface
+from src.domain.models.participant import Participant
 from typing import Optional
 
 

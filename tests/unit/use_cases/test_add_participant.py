@@ -5,7 +5,7 @@ from src.application.use_cases.add_participant import (
     AddParticipantCommand,
     AddParticipantUseCase,
 )
-from src.models.participant import Participant
+from src.domain.models.participant import Participant
 
 
 class TestAddParticipantUseCase:

@@ -1,9 +1,8 @@
 from dataclasses import dataclass, field
-from dataclasses import dataclass, field
 from typing import Optional, Union
 
-from domain.value_objects import Gender
-from models.participant import Participant as LegacyParticipant
+from src.domain.value_objects import Gender
+from src.models.participant import Participant as LegacyParticipant
 
 
 @dataclass

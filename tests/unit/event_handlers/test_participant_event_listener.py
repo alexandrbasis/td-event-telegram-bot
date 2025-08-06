@@ -10,7 +10,7 @@ from src.domain.events.participant_events import (
     ParticipantAddedEvent,
     ParticipantUpdatedEvent,
 )
-from src.models.participant import Participant
+from src.domain.models.participant import Participant
 
 
 class TestParticipantEventListener:
