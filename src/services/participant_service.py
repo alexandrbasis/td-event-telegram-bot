@@ -7,7 +7,7 @@ from typing import Dict, List, Optional, Tuple, Union
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
-from presentation.ui.legacy_keyboards import (
+from ..presentation.ui.legacy_keyboards import (
     get_department_selection_keyboard,
     get_department_selection_keyboard_required,
     get_edit_keyboard,
@@ -19,7 +19,7 @@ from presentation.ui.legacy_keyboards import (
     get_size_selection_keyboard,
     get_size_selection_keyboard_required,
 )
-from presentation.ui.formatters import MessageFormatter
+from ..presentation.ui.formatters import MessageFormatter
 from ..repositories.participant_repository import AbstractParticipantRepository
 from ..models.participant import Participant
 from ..database import find_participant_by_name
