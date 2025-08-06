@@ -63,13 +63,11 @@ class AddCallbackHandler(BaseHandler):
 
 
 class SearchCallbackHandler(BaseHandler):
-    def __init__(self, container, ui_service):
+    def __init__(self, container, ui_service, search_use_case):
         super().__init__(container)
-        self.search_use_case = (
-            container.search_participants_use_case()
-            if hasattr(container, "search_participants_use_case")
-            else None
-        )
+        if search_use_case is None:
+            raise ValueError("search_use_case cannot be None")
+        self.search_use_case = search_use_case
         self.ui_service = ui_service
         self._handle = require_role("viewer")(self._handle)
 
@@ -203,15 +201,32 @@ class MainMenuCallbackHandler(BaseHandler):
 
 
 class SaveConfirmationCallbackHandler(BaseHandler):
-    def __init__(self, container, ui_service):
+    def __init__(
+        self,
+        container,
+        ui_service,
+        add_use_case,
+        update_use_case,
+        search_use_case,
+        get_use_case,
+    ):
         super().__init__(container)
         self.ui_service = ui_service
         from main import smart_cleanup_on_error, log_state_transitions
 
-        self.add_use_case = container.add_participant_use_case()
-        self.update_use_case = container.update_participant_use_case()
-        self.search_use_case = container.search_participants_use_case()
-        self.get_use_case = container.get_participant_use_case()
+        if add_use_case is None:
+            raise ValueError("add_use_case cannot be None")
+        if update_use_case is None:
+            raise ValueError("update_use_case cannot be None")
+        if search_use_case is None:
+            raise ValueError("search_use_case cannot be None")
+        if get_use_case is None:
+            raise ValueError("get_use_case cannot be None")
+
+        self.add_use_case = add_use_case
+        self.update_use_case = update_use_case
+        self.search_use_case = search_use_case
+        self.get_use_case = get_use_case
 
         self._handle = require_role("coordinator")(
             smart_cleanup_on_error(log_state_transitions(self._handle))

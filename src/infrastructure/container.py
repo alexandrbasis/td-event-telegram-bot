@@ -153,6 +153,7 @@ class Container(containers.DeclarativeContainer):
     search_callback_handler = providers.Factory(
         "src.presentation.handlers.callback_handlers.SearchCallbackHandler",
         container=providers.Self(),
+        search_use_case=search_participants_use_case,
         ui_service=ui_service,
     )
     main_menu_callback_handler = providers.Factory(
@@ -165,6 +166,10 @@ class Container(containers.DeclarativeContainer):
         "src.presentation.handlers.callback_handlers.SaveConfirmationCallbackHandler",
         container=providers.Self(),
         ui_service=ui_service,
+        add_use_case=add_participant_use_case,
+        update_use_case=update_participant_use_case,
+        search_use_case=search_participants_use_case,
+        get_use_case=get_participant_use_case,
     )
     duplicate_callback_handler = providers.Factory(
         "src.presentation.handlers.callback_handlers.DuplicateCallbackHandler",

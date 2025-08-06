@@ -23,9 +23,7 @@ class SearchFlowTestCase(unittest.IsolatedAsyncioTestCase):
 
         with patch("main.user_logger"), patch(
             "main._cleanup_messages", new=AsyncMock()
-        ), patch(
-            "main._show_main_menu", new=AsyncMock()
-        ), patch(
+        ), patch("main._show_main_menu", new=AsyncMock()), patch(
             "main._log_session_end"
         ), patch(
             "src.utils.decorators.VIEWER_IDS", [1]
@@ -35,7 +33,8 @@ class SearchFlowTestCase(unittest.IsolatedAsyncioTestCase):
             container = SimpleNamespace(
                 logger=lambda: MagicMock(), user_logger=lambda: MagicMock()
             )
-            handler = SearchCallbackHandler(container, ui_service)
+            search_use_case = AsyncMock()
+            handler = SearchCallbackHandler(container, ui_service, search_use_case)
             state = await handler.handle(update, context)
             self.assertEqual(state, SEARCHING_PARTICIPANTS)
             self.assertIn("current_state", context.user_data)
@@ -56,7 +55,8 @@ class SearchFlowTestCase(unittest.IsolatedAsyncioTestCase):
             update2 = SimpleNamespace(
                 callback_query=MagicMock(), effective_user=SimpleNamespace(id=1)
             )
-            handler2 = SearchCallbackHandler(container, ui_service)
+            search_use_case2 = AsyncMock()
+            handler2 = SearchCallbackHandler(container, ui_service, search_use_case2)
             state2 = await handler2.handle(update2, context)
             self.assertEqual(state2, SEARCHING_PARTICIPANTS)
             self.assertIn("current_state", context.user_data)
