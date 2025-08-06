@@ -9,7 +9,6 @@ from main import (
     get_post_action_keyboard,
     format_participant_full_info,
     format_participant_block,
-    show_confirmation,
     cleanup_user_data_safe,
 )
 from states import COLLECTING_DATA, CONFIRMING_DUPLICATE
@@ -61,9 +60,7 @@ class AddCallbackHandler(BaseHandler):
         msg2 = await query.message.reply_text(MESSAGES["ADD_TEMPLATE"])
         self.message_service.add_message_to_cleanup(context, msg1.message_id)
         self.message_service.add_message_to_cleanup(context, msg2.message_id)
-        self.message_service.add_message_to_cleanup(
-            context, query.message.message_id
-        )
+        self.message_service.add_message_to_cleanup(context, query.message.message_id)
         context.user_data["current_state"] = COLLECTING_DATA
         return COLLECTING_DATA
 
@@ -100,7 +97,9 @@ class SearchCallbackHandler(BaseHandler):
         if self.user_logger:
             self.user_logger.log_user_action(user_id, "search_callback_triggered", {})
 
-        return await self.ui_service.show_search_prompt(update, context, is_callback=True)
+        return await self.ui_service.show_search_prompt(
+            update, context, is_callback=True
+        )
 
     async def handle(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         return await self._handle(update, context)
