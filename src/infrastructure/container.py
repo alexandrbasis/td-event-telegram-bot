@@ -89,6 +89,14 @@ class Container(containers.DeclarativeContainer):
     # UI Factory
     ui_factory = providers.Factory("presentation.ui.factory.UIFactory")
 
+    # UI Services
+    message_service = providers.Factory(
+        "presentation.services.message_service.MessageService"
+    )
+    ui_service = providers.Factory(
+        "presentation.services.ui_service.UIService", message_service=message_service
+    )
+
     # Controllers
     participant_controller = providers.Factory(
         "application.controllers.participant_controller.ParticipantController",
@@ -99,10 +107,13 @@ class Container(containers.DeclarativeContainer):
     start_handler = providers.Factory(
         "presentation.handlers.command_handlers.StartCommandHandler",
         container=providers.Self(),
+        ui_service=ui_service,
+        message_service=message_service,
     )
     add_handler = providers.Factory(
         "presentation.handlers.command_handlers.AddCommandHandler",
         container=providers.Self(),
+        message_service=message_service,
     )
     update_handler = providers.Factory(
         "presentation.handlers.command_handlers.UpdateParticipantHandler",
@@ -119,10 +130,13 @@ class Container(containers.DeclarativeContainer):
     search_handler = providers.Factory(
         "presentation.handlers.command_handlers.SearchCommandHandler",
         container=providers.Self(),
+        ui_service=ui_service,
+        message_service=message_service,
     )
     cancel_handler = providers.Factory(
         "presentation.handlers.command_handlers.CancelCommandHandler",
         container=providers.Self(),
+        ui_service=ui_service,
     )
 
     add_callback_handler = providers.Factory(

@@ -9,20 +9,16 @@ from utils.decorators import require_role
 from utils.session_recovery import detect_interrupted_session, handle_session_recovery
 from messages import MESSAGES
 from states import COLLECTING_DATA
-from main import (
-    _cleanup_messages,
-    _show_main_menu,
-    _record_action,
-    _log_session_end,
-    _send_response_with_menu_button,
-    _show_search_prompt,
-)
+from utils.bot_helpers import _record_action, _log_session_end, cleanup_on_error
 from presentation.ui.formatters.participant_formatter import format_participant
+from config import COORDINATOR_IDS, VIEWER_IDS
 
 
 class StartCommandHandler(BaseHandler):
-    def __init__(self, container):
+    def __init__(self, container, ui_service, message_service):
         super().__init__(container)
+        self.ui_service = ui_service
+        self.message_service = message_service
         self._handle = require_role("viewer")(self._handle)
 
     async def _handle(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -41,8 +37,8 @@ class StartCommandHandler(BaseHandler):
 
         if self.logger:
             self.logger.info("User %s started /start", user_id)
-        await _cleanup_messages(context, update.effective_chat.id)
-        await _show_main_menu(update, context)
+        await self.ui_service.cleanup_messages(context, update.effective_chat.id)
+        await self.ui_service.show_main_menu(update, context)
         if self.user_logger:
             self.user_logger.log_user_action(
                 user_id, "command_end", {"command": "/start"}
@@ -53,10 +49,9 @@ class StartCommandHandler(BaseHandler):
 
 
 class AddCommandHandler(BaseHandler):
-    def __init__(self, container):
+    def __init__(self, container, message_service):
         super().__init__(container)
-        from main import cleanup_on_error
-
+        self.message_service = message_service
         self._handle = require_role("coordinator")(cleanup_on_error(self._handle))
 
     async def _handle(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -100,11 +95,10 @@ class AddCommandHandler(BaseHandler):
             reply_markup=cancel_markup,
         )
         msg2 = await update.message.reply_text(MESSAGES["ADD_TEMPLATE"])
-        from main import _add_message_to_cleanup
 
-        _add_message_to_cleanup(context, msg1.message_id)
-        _add_message_to_cleanup(context, msg2.message_id)
-        _add_message_to_cleanup(context, update.message.message_id)
+        self.message_service.add_message_to_cleanup(context, msg1.message_id)
+        self.message_service.add_message_to_cleanup(context, msg2.message_id)
+        self.message_service.add_message_to_cleanup(context, update.message.message_id)
         context.user_data["current_state"] = COLLECTING_DATA
         if self.user_logger:
             self.user_logger.log_state_transition(
@@ -157,9 +151,13 @@ class HelpCommandHandler(BaseHandler):
                 user_id, "command_start", {"command": "/help"}
             )
         _record_action(context, "/help:start")
-        from main import get_user_role
 
-        role = get_user_role(user_id)
+        if user_id in COORDINATOR_IDS:
+            role = "coordinator"
+        elif user_id in VIEWER_IDS:
+            role = "viewer"
+        else:
+            role = "unauthorized"
         if self.logger:
             self.logger.info("User %s requested help", user_id)
 
@@ -249,9 +247,11 @@ class ListCommandHandler(BaseHandler):
 
 
 class SearchCommandHandler(BaseHandler):
-    def __init__(self, container):
+    def __init__(self, container, ui_service, message_service):
         super().__init__(container)
         self.search_use_case = container.search_participants_use_case()
+        self.ui_service = ui_service
+        self.message_service = message_service
         self._handle = require_role("viewer")(self._handle)
 
     async def _handle(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -280,7 +280,7 @@ class SearchCommandHandler(BaseHandler):
                 message = "\n".join(formatted)
             else:
                 message = "❌ Ничего не найдено"
-            await _send_response_with_menu_button(update, message)
+            await self.message_service.send_response_with_menu_button(update, message)
             if self.user_logger:
                 self.user_logger.log_user_action(
                     user_id,
@@ -288,15 +288,16 @@ class SearchCommandHandler(BaseHandler):
                     {"command": "/search", "count": len(results)},
                 )
             return ConversationHandler.END
-        return await _show_search_prompt(update, context, is_callback=False)
+        return await self.ui_service.show_search_prompt(update, context, is_callback=False)
 
     async def handle(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         return await self._handle(update, context)
 
 
 class CancelCommandHandler(BaseHandler):
-    def __init__(self, container):
+    def __init__(self, container, ui_service):
         super().__init__(container)
+        self.ui_service = ui_service
         self._handle = require_role("viewer")(self._handle)
 
     async def _handle(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -319,8 +320,8 @@ class CancelCommandHandler(BaseHandler):
             if self.logger:
                 self.logger.info("User %s cancelled a non-existent operation.", user_id)
 
-        await _cleanup_messages(context, update.effective_chat.id)
-        await _show_main_menu(update, context, is_return=True)
+        await self.ui_service.cleanup_messages(context, update.effective_chat.id)
+        await self.ui_service.show_main_menu(update, context, is_return=True)
         if self.user_logger:
             self.user_logger.log_user_action(
                 user_id, "command_end", {"command": "/cancel"}
