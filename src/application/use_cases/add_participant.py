@@ -9,8 +9,8 @@ from domain.specifications.participant_specifications import (
     TeamRoleRequiresDepartmentSpecification,
 )
 from domain.interfaces.repositories import ParticipantRepositoryInterface
-from shared.event_dispatcher import EventDispatcher
-from shared.exceptions import DuplicateParticipantError, ValidationError
+from ...shared.event_dispatcher import EventDispatcher
+from ...shared.exceptions import DuplicateParticipantError, ValidationError
 from .decorators import log_use_case
 
 

@@ -6,30 +6,30 @@ class Container(containers.DeclarativeContainer):
     # Start with basic dependencies
     config = providers.Configuration()
     logger = providers.Singleton(logging.getLogger, "bot")
-    user_logger = providers.Singleton("utils.user_logger.UserActionLogger")
+    user_logger = providers.Singleton("src.utils.user_logger.UserActionLogger")
 
     # Keep existing components working
     legacy_participant_service = providers.Singleton(
-        "services.participant_service.ParticipantService",
+        "src.services.participant_service.ParticipantService",
         repository=providers.Singleton(
-            "repositories.airtable_participant_repository.AirtableParticipantRepository"
+            "src.repositories.airtable_participant_repository.AirtableParticipantRepository"  # ✅ Используем Airtable
         ),
     )
 
     # Domain Services
     participant_validator = providers.Factory(
-        "utils.validators.validate_participant_data",
+        "src.utils.validators.validate_participant_data",
     )
     # participant_validator = providers.Factory(
     #     "domain.services.participant_validator.ParticipantValidator",
     #     legacy_validator=providers.Callable(
-    #         "utils.validators.validate_participant_data"
+    #         "src.utils.validators.validate_participant_data"
     #     ),
     # )
 
     # Repositories
     participant_repository = providers.Factory(
-        "repositories.airtable_participant_repository.AirtableParticipantRepository"
+        "src.repositories.airtable_participant_repository.AirtableParticipantRepository"  # ✅ Используем Airtable
     )
 
     # duplicate_checker = providers.Factory(
@@ -45,13 +45,13 @@ class Container(containers.DeclarativeContainer):
 
     # Event Listeners
     participant_event_listener = providers.Factory(
-        "application.event_handlers.participant_event_listener.ParticipantEventListener",
+        "src.application.event_handlers.participant_event_listener.ParticipantEventListener",
         logger=providers.Callable("logging.getLogger", "participant_events"),
     )
 
     # Use Cases
     add_participant_use_case = providers.Factory(
-        "application.use_cases.add_participant.AddParticipantUseCase",
+        "src.application.use_cases.add_participant.AddParticipantUseCase",
         repository=participant_repository,
         validator=participant_validator,
         # duplicate_checker=duplicate_checker,
@@ -59,22 +59,22 @@ class Container(containers.DeclarativeContainer):
     )
 
     search_participants_use_case = providers.Factory(
-        "application.use_cases.search_participant.SearchParticipantsUseCase",
+        "src.application.use_cases.search_participant.SearchParticipantsUseCase",
         participant_service=legacy_participant_service,
     )
 
     list_participants_use_case = providers.Factory(
-        "application.use_cases.list_participants.ListParticipantsUseCase",
+        "src.application.use_cases.list_participants.ListParticipantsUseCase",
         participant_service=legacy_participant_service,
     )
 
     get_participant_use_case = providers.Factory(
-        "application.use_cases.get_participant.GetParticipantUseCase",
+        "src.application.use_cases.get_participant.GetParticipantUseCase",
         participant_service=legacy_participant_service,
     )
 
     update_participant_use_case = providers.Factory(
-        "application.use_cases.update_participant.UpdateParticipantUseCase",
+        "src.application.use_cases.update_participant.UpdateParticipantUseCase",
         repository=participant_repository,
         validator=participant_validator,
         # duplicate_checker=duplicate_checker,
@@ -82,87 +82,87 @@ class Container(containers.DeclarativeContainer):
     )
 
     delete_participant_use_case = providers.Factory(
-        "application.use_cases.delete_participant.DeleteParticipantUseCase",
+        "src.application.use_cases.delete_participant.DeleteParticipantUseCase",
         participant_service=legacy_participant_service,
     )
 
     # UI Factory
-    ui_factory = providers.Factory("presentation.ui.factory.UIFactory")
+    ui_factory = providers.Factory("src.presentation.ui.factory.UIFactory")
 
     # UI Services
     message_service = providers.Factory(
-        "presentation.services.message_service.MessageService"
+        "src.presentation.services.message_service.MessageService"
     )
     ui_service = providers.Factory(
-        "presentation.services.ui_service.UIService", message_service=message_service
+        "src.presentation.services.ui_service.UIService", message_service=message_service
     )
 
     # Controllers
     participant_controller = providers.Factory(
-        "application.controllers.participant_controller.ParticipantController",
+        "src.application.controllers.participant_controller.ParticipantController",
         container=providers.Self(),
     )
 
     # Handlers
     start_handler = providers.Factory(
-        "presentation.handlers.command_handlers.StartCommandHandler",
+        "src.presentation.handlers.command_handlers.StartCommandHandler",
         container=providers.Self(),
         ui_service=ui_service,
         message_service=message_service,
     )
     add_handler = providers.Factory(
-        "presentation.handlers.command_handlers.AddCommandHandler",
+        "src.presentation.handlers.command_handlers.AddCommandHandler",
         container=providers.Self(),
         message_service=message_service,
     )
     update_handler = providers.Factory(
-        "presentation.handlers.command_handlers.UpdateParticipantHandler",
+        "src.presentation.handlers.command_handlers.UpdateParticipantHandler",
         container=providers.Self(),
     )
     help_handler = providers.Factory(
-        "presentation.handlers.command_handlers.HelpCommandHandler",
+        "src.presentation.handlers.command_handlers.HelpCommandHandler",
         container=providers.Self(),
         message_service=message_service,
     )
     list_handler = providers.Factory(
-        "presentation.handlers.command_handlers.ListCommandHandler",
+        "src.presentation.handlers.command_handlers.ListCommandHandler",
         container=providers.Self(),
     )
     search_handler = providers.Factory(
-        "presentation.handlers.command_handlers.SearchCommandHandler",
+        "src.presentation.handlers.command_handlers.SearchCommandHandler",
         container=providers.Self(),
         ui_service=ui_service,
         message_service=message_service,
     )
     cancel_handler = providers.Factory(
-        "presentation.handlers.command_handlers.CancelCommandHandler",
+        "src.presentation.handlers.command_handlers.CancelCommandHandler",
         container=providers.Self(),
         ui_service=ui_service,
     )
 
     add_callback_handler = providers.Factory(
-        "presentation.handlers.callback_handlers.AddCallbackHandler",
+        "src.presentation.handlers.callback_handlers.AddCallbackHandler",
         container=providers.Self(),
         message_service=message_service,
     )
     search_callback_handler = providers.Factory(
-        "presentation.handlers.callback_handlers.SearchCallbackHandler",
+        "src.presentation.handlers.callback_handlers.SearchCallbackHandler",
         container=providers.Self(),
         ui_service=ui_service,
     )
     main_menu_callback_handler = providers.Factory(
-        "presentation.handlers.callback_handlers.MainMenuCallbackHandler",
+        "src.presentation.handlers.callback_handlers.MainMenuCallbackHandler",
         container=providers.Self(),
         ui_service=ui_service,
         message_service=message_service,
     )
     save_confirmation_callback_handler = providers.Factory(
-        "presentation.handlers.callback_handlers.SaveConfirmationCallbackHandler",
+        "src.presentation.handlers.callback_handlers.SaveConfirmationCallbackHandler",
         container=providers.Self(),
         ui_service=ui_service,
     )
     duplicate_callback_handler = providers.Factory(
-        "presentation.handlers.callback_handlers.DuplicateCallbackHandler",
+        "src.presentation.handlers.callback_handlers.DuplicateCallbackHandler",
         container=providers.Self(),
     )
 

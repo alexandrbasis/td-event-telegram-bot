@@ -1,6 +1,6 @@
 import logging
 
-from services.participant_service import ParticipantService
+from ...services.participant_service import ParticipantService
 from models.participant import Participant
 from .decorators import log_use_case
 

@@ -1,12 +1,12 @@
 from telegram import Update
 from telegram.ext import ContextTypes
 
-from application.use_cases.add_participant import AddParticipantCommand
-from application.use_cases.update_participant import UpdateParticipantCommand
-from application.use_cases.search_participant import SearchParticipantsQuery
-from shared.exceptions import ValidationError
-from presentation.ui import UIFactory
-from states import COLLECTING_DATA
+from ..use_cases.add_participant import AddParticipantCommand
+from ..use_cases.update_participant import UpdateParticipantCommand
+from ..use_cases.search_participant import SearchParticipantsQuery
+from ...shared.exceptions import ValidationError
+from ...presentation.ui import UIFactory
+from ...states import COLLECTING_DATA
 
 MAIN_MENU = 0
 
