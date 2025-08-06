@@ -10,7 +10,7 @@ from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
 sys.path.append(str(Path(__file__).resolve().parent.parent / "src"))
 
-from presentation.ui.keyboards import (
+from presentation.ui.legacy_keyboards import (
     get_department_selection_keyboard,
     get_department_selection_keyboard_required,
     get_edit_keyboard,

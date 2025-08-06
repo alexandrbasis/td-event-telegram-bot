@@ -82,10 +82,13 @@ class Container(containers.DeclarativeContainer):
         participant_service=legacy_participant_service,
     )
 
+    # UI Factory
+    ui_factory = providers.Factory("presentation.ui.factory.UIFactory")
+
     # Controllers
     participant_controller = providers.Factory(
         "application.controllers.participant_controller.ParticipantController",
-        add_use_case=add_participant_use_case,
+        container=providers.Self(),
     )
 
     # Handlers
@@ -95,6 +98,10 @@ class Container(containers.DeclarativeContainer):
     )
     add_handler = providers.Factory(
         "presentation.handlers.command_handlers.AddCommandHandler",
+        container=providers.Self(),
+    )
+    update_handler = providers.Factory(
+        "presentation.handlers.command_handlers.UpdateParticipantHandler",
         container=providers.Self(),
     )
     help_handler = providers.Factory(
