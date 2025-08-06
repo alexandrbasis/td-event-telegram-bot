@@ -49,3 +49,10 @@ def test_add_participant_use_case_provider():
     assert isinstance(
         use_case.duplicate_checker.repository, AirtableParticipantRepository
     )
+
+
+def test_container_wiring():
+    from src.infrastructure.container import Container
+
+    container = Container()
+    container.check_dependencies()

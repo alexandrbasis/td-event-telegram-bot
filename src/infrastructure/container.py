@@ -1,6 +1,8 @@
 import logging
 from dependency_injector import containers, providers
 
+from src.utils.validators import validate_participant_data
+
 
 class Container(containers.DeclarativeContainer):
     # Start with basic dependencies
@@ -19,9 +21,7 @@ class Container(containers.DeclarativeContainer):
     # ✅ Domain Services
     participant_validator = providers.Factory(
         "src.domain.services.participant_validator.ParticipantValidator",
-        legacy_validator=providers.Callable(
-            "src.utils.validators.validate_participant_data"
-        ),
+        legacy_validator=providers.Object(validate_participant_data),
     )
 
     # Repositories
