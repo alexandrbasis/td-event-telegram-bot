@@ -94,7 +94,8 @@ class Container(containers.DeclarativeContainer):
         "src.presentation.services.message_service.MessageService"
     )
     ui_service = providers.Factory(
-        "src.presentation.services.ui_service.UIService", message_service=message_service
+        "src.presentation.services.ui_service.UIService",
+        message_service=message_service,
     )
 
     # Controllers
@@ -127,6 +128,8 @@ class Container(containers.DeclarativeContainer):
     list_handler = providers.Factory(
         "src.presentation.handlers.command_handlers.ListCommandHandler",
         container=providers.Self(),
+        list_use_case=list_participants_use_case,
+        ui_factory=ui_factory,
     )
     search_handler = providers.Factory(
         "src.presentation.handlers.command_handlers.SearchCommandHandler",

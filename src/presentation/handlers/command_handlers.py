@@ -6,7 +6,10 @@ from src.application.use_cases.search_participant import SearchParticipantsQuery
 from src.application.use_cases.update_participant import UpdateParticipantCommand
 from src.presentation.handlers.base_handler import BaseHandler
 from src.utils.decorators import require_role
-from src.utils.session_recovery import detect_interrupted_session, handle_session_recovery
+from src.utils.session_recovery import (
+    detect_interrupted_session,
+    handle_session_recovery,
+)
 from src.messages import MESSAGES
 from src.states import COLLECTING_DATA
 from src.utils.bot_helpers import _record_action, _log_session_end
@@ -198,10 +201,17 @@ class HelpCommandHandler(BaseHandler):
 
 
 class ListCommandHandler(BaseHandler):
-    def __init__(self, container):
+    def __init__(self, container, list_use_case, ui_factory):
+        if container is None:
+            raise ValueError("Container is required")
+        if list_use_case is None:
+            raise ValueError("list_use_case cannot be None")
+        if ui_factory is None:
+            raise ValueError("ui_factory cannot be None")
+
         super().__init__(container)
-        self.list_use_case = container.list_participants_use_case()
-        self.ui_factory = container.ui_factory()
+        self.list_use_case = list_use_case
+        self.ui_factory = ui_factory
         self._handle = require_role("viewer")(self._handle)
 
     async def _handle(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
