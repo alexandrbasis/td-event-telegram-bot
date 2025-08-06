@@ -136,8 +136,9 @@ class UpdateParticipantHandler(BaseHandler):
 
 
 class HelpCommandHandler(BaseHandler):
-    def __init__(self, container):
+    def __init__(self, container, message_service):
         super().__init__(container)
+        self.message_service = message_service
         self._handle = require_role("viewer")(self._handle)
 
     async def _handle(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -184,7 +185,7 @@ class HelpCommandHandler(BaseHandler):
         """
 
         # Respond with help text and return user to main menu
-        await _send_response_with_menu_button(update, help_text)
+        await self.message_service.send_response_with_menu_button(update, help_text)
         if self.user_logger:
             self.user_logger.log_user_action(
                 user_id, "command_end", {"command": "/help"}

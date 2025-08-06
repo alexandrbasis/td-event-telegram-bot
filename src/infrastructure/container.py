@@ -122,6 +122,7 @@ class Container(containers.DeclarativeContainer):
     help_handler = providers.Factory(
         "presentation.handlers.command_handlers.HelpCommandHandler",
         container=providers.Self(),
+        message_service=message_service,
     )
     list_handler = providers.Factory(
         "presentation.handlers.command_handlers.ListCommandHandler",
@@ -142,18 +143,23 @@ class Container(containers.DeclarativeContainer):
     add_callback_handler = providers.Factory(
         "presentation.handlers.callback_handlers.AddCallbackHandler",
         container=providers.Self(),
+        message_service=message_service,
     )
     search_callback_handler = providers.Factory(
         "presentation.handlers.callback_handlers.SearchCallbackHandler",
         container=providers.Self(),
+        ui_service=ui_service,
     )
     main_menu_callback_handler = providers.Factory(
         "presentation.handlers.callback_handlers.MainMenuCallbackHandler",
         container=providers.Self(),
+        ui_service=ui_service,
+        message_service=message_service,
     )
     save_confirmation_callback_handler = providers.Factory(
         "presentation.handlers.callback_handlers.SaveConfirmationCallbackHandler",
         container=providers.Self(),
+        ui_service=ui_service,
     )
     duplicate_callback_handler = providers.Factory(
         "presentation.handlers.callback_handlers.DuplicateCallbackHandler",

@@ -5,11 +5,6 @@ from telegram.ext import ContextTypes, ConversationHandler
 from presentation.handlers.base_handler import BaseHandler
 from utils.decorators import require_role
 from main import (
-    _add_message_to_cleanup,
-    _cleanup_messages,
-    _show_main_menu,
-    _send_response_with_menu_button,
-    _show_search_prompt,
     get_duplicate_keyboard,
     get_post_action_keyboard,
     format_participant_full_info,
@@ -25,8 +20,9 @@ from application.use_cases.search_participant import SearchParticipantsQuery
 
 
 class AddCallbackHandler(BaseHandler):
-    def __init__(self, container):
+    def __init__(self, container, message_service):
         super().__init__(container)
+        self.message_service = message_service
         self._handle = require_role("coordinator")(self._handle)
 
     async def _handle(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -63,9 +59,11 @@ class AddCallbackHandler(BaseHandler):
             reply_markup=cancel_markup,
         )
         msg2 = await query.message.reply_text(MESSAGES["ADD_TEMPLATE"])
-        _add_message_to_cleanup(context, msg1.message_id)
-        _add_message_to_cleanup(context, msg2.message_id)
-        _add_message_to_cleanup(context, query.message.message_id)
+        self.message_service.add_message_to_cleanup(context, msg1.message_id)
+        self.message_service.add_message_to_cleanup(context, msg2.message_id)
+        self.message_service.add_message_to_cleanup(
+            context, query.message.message_id
+        )
         context.user_data["current_state"] = COLLECTING_DATA
         return COLLECTING_DATA
 
@@ -74,13 +72,14 @@ class AddCallbackHandler(BaseHandler):
 
 
 class SearchCallbackHandler(BaseHandler):
-    def __init__(self, container):
+    def __init__(self, container, ui_service):
         super().__init__(container)
         self.search_use_case = (
             container.search_participants_use_case()
             if hasattr(container, "search_participants_use_case")
             else None
         )
+        self.ui_service = ui_service
         self._handle = require_role("viewer")(self._handle)
 
     async def _handle(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -101,15 +100,17 @@ class SearchCallbackHandler(BaseHandler):
         if self.user_logger:
             self.user_logger.log_user_action(user_id, "search_callback_triggered", {})
 
-        return await _show_search_prompt(update, context, is_callback=True)
+        return await self.ui_service.show_search_prompt(update, context, is_callback=True)
 
     async def handle(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         return await self._handle(update, context)
 
 
 class MainMenuCallbackHandler(BaseHandler):
-    def __init__(self, container):
+    def __init__(self, container, ui_service, message_service):
         super().__init__(container)
+        self.ui_service = ui_service
+        self.message_service = message_service
         self._handle = require_role("viewer")(self._handle)
 
     async def _handle(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -128,7 +129,7 @@ class MainMenuCallbackHandler(BaseHandler):
             return await cancel_callback(update, context)
 
         if data == "main_menu":
-            await _show_main_menu(update, context, is_return=True)
+            await self.ui_service.show_main_menu(update, context, is_return=True)
             return
 
         if data == "main_list":
@@ -166,14 +167,14 @@ class MainMenuCallbackHandler(BaseHandler):
                 message += f"   • Роль: {p.Role}{department}\n"
                 message += f"   • ID: {p.id}\n\n"
 
-            await _send_response_with_menu_button(update, message)
+            await self.message_service.send_response_with_menu_button(update, message)
             return
 
         if data == "main_export":
-            await _send_response_with_menu_button(
+            await self.message_service.send_response_with_menu_button(
                 update,
-                "📤 **Экспорт данных** (заглушка)\n\n",
-                "🔧 Функция в разработке.\n",
+                "📤 **Экспорт данных** (заглушка)\n\n"
+                "🔧 Функция в разработке.\n"
                 "Пример: /export worship team - экспорт участников worship команды",
             )
             return
@@ -201,7 +202,7 @@ class MainMenuCallbackHandler(BaseHandler):
 "Кто живет в комнате 203A?"
             """
 
-            await _send_response_with_menu_button(update, help_text)
+            await self.message_service.send_response_with_menu_button(update, help_text)
             return
 
     async def handle(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -209,8 +210,9 @@ class MainMenuCallbackHandler(BaseHandler):
 
 
 class SaveConfirmationCallbackHandler(BaseHandler):
-    def __init__(self, container):
+    def __init__(self, container, ui_service):
         super().__init__(container)
+        self.ui_service = ui_service
         from main import smart_cleanup_on_error, log_state_transitions
 
         self.add_use_case = container.add_participant_use_case()
@@ -232,7 +234,7 @@ class SaveConfirmationCallbackHandler(BaseHandler):
             self.logger.debug(f"user_data keys: {list(context.user_data.keys())}")
 
         await query.answer()
-        await _cleanup_messages(context, update.effective_chat.id)
+        await self.ui_service.cleanup_messages(context, update.effective_chat.id)
 
         participant_data = context.user_data.get("parsed_participant", {})
         if not participant_data:
