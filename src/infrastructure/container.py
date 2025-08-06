@@ -16,32 +16,28 @@ class Container(containers.DeclarativeContainer):
         ),
     )
 
-    # Domain Services
+    # ✅ Domain Services
     participant_validator = providers.Factory(
-        "src.utils.validators.validate_participant_data",
+        "src.domain.services.participant_validator.ParticipantValidator",
+        legacy_validator=providers.Callable(
+            "src.utils.validators.validate_participant_data"
+        ),
     )
-    # participant_validator = providers.Factory(
-    #     "domain.services.participant_validator.ParticipantValidator",
-    #     legacy_validator=providers.Callable(
-    #         "src.utils.validators.validate_participant_data"
-    #     ),
-    # )
 
     # Repositories
     participant_repository = providers.Factory(
-        "src.repositories.airtable_participant_repository.AirtableParticipantRepository"  # ✅ Используем Airtable
+        "src.repositories.airtable_participant_repository.AirtableParticipantRepository"
     )
 
-    # duplicate_checker = providers.Factory(
-    #     "src.domain.services.duplicate_checker.DuplicateCheckerService",
-    #     repository=participant_repository,
-    # )
-    # duplicate_checker = providers.Factory(
-    #     "domain.services.duplicate_checker.DuplicateCheckerService",
-    #     repository=participant_repository,
-    # )
+    # ✅ Duplicate checker and dispatcher
+    duplicate_checker = providers.Factory(
+        "src.domain.services.duplicate_checker.DuplicateCheckerService",
+        repository=participant_repository,
+    )
 
-    # event_dispatcher = providers.Singleton("shared.event_dispatcher.EventDispatcher")
+    event_dispatcher = providers.Singleton(
+        "src.shared.event_dispatcher.EventDispatcher"
+    )
 
     # Event Listeners
     participant_event_listener = providers.Factory(
@@ -49,13 +45,13 @@ class Container(containers.DeclarativeContainer):
         logger=providers.Callable("logging.getLogger", "participant_events"),
     )
 
-    # Use Cases
+    # ✅ Use Cases
     add_participant_use_case = providers.Factory(
         "src.application.use_cases.add_participant.AddParticipantUseCase",
         repository=participant_repository,
         validator=participant_validator,
-        # duplicate_checker=duplicate_checker,
-        # event_dispatcher=event_dispatcher,
+        duplicate_checker=duplicate_checker,
+        event_dispatcher=event_dispatcher,
     )
 
     search_participants_use_case = providers.Factory(
@@ -77,8 +73,8 @@ class Container(containers.DeclarativeContainer):
         "src.application.use_cases.update_participant.UpdateParticipantUseCase",
         repository=participant_repository,
         validator=participant_validator,
-        # duplicate_checker=duplicate_checker,
-        # event_dispatcher=event_dispatcher,
+        duplicate_checker=duplicate_checker,
+        event_dispatcher=event_dispatcher,
     )
 
     delete_participant_use_case = providers.Factory(
@@ -177,4 +173,16 @@ class Container(containers.DeclarativeContainer):
     )
 
     def configure_events(self):
-        pass  # Временно отключить события
+        """Configure event subscriptions"""
+        dispatcher = self.event_dispatcher()
+        listener = self.participant_event_listener()
+
+        from src.domain.events.participant_events import (
+            ParticipantAddedEvent,
+            ParticipantUpdatedEvent,
+        )
+
+        dispatcher.subscribe(ParticipantAddedEvent, listener.on_participant_added)
+        dispatcher.subscribe(
+            ParticipantUpdatedEvent, listener.on_participant_updated
+        )
