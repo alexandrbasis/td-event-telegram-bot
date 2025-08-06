@@ -23,14 +23,14 @@ from ..presentation.ui.formatters import MessageFormatter
 from ..repositories.participant_repository import AbstractParticipantRepository
 from ..models.participant import Participant
 from ..database import find_participant_by_name
-from utils.validators import validate_participant_data
+from ..utils.validators import validate_participant_data
 from ..shared.exceptions import (
     DuplicateParticipantError,
     ParticipantNotFoundError,
     ValidationError,
 )
-from parsers.participant_parser import normalize_field_value
-from constants import (
+from ..parsers.participant_parser import normalize_field_value
+from ..constants import (
     GENDER_DISPLAY,
     ROLE_DISPLAY,
     SIZE_DISPLAY,

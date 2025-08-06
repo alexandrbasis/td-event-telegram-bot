@@ -2,7 +2,7 @@ from typing import Dict
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
-from constants import DEPARTMENT_DISPLAY
+from ...constants import DEPARTMENT_DISPLAY
 
 
 def get_gender_selection_keyboard() -> InlineKeyboardMarkup:
