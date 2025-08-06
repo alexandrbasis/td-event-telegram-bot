@@ -1,4 +1,4 @@
-from domain.models.participant import Participant
+from models.participant import Participant
 
 
 class TeamRoleRequiresDepartmentSpecification:

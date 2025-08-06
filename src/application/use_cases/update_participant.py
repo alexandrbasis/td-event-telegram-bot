@@ -5,7 +5,7 @@ from typing import Dict
 
 from domain.services.participant_validator import ParticipantValidator
 from domain.services.duplicate_checker import DuplicateCheckerService
-from domain.models.participant import Participant
+from models.participant import Participant
 from domain.specifications.participant_specifications import (
     TeamRoleRequiresDepartmentSpecification,
 )

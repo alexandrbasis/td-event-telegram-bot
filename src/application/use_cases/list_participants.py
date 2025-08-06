@@ -2,7 +2,7 @@ import logging
 from typing import List
 
 from services.participant_service import ParticipantService
-from domain.models.participant import Participant
+from models.participant import Participant
 from .decorators import log_use_case
 
 

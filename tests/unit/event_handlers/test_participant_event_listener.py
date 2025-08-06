@@ -14,7 +14,7 @@ from domain.events.participant_events import (
     ParticipantAddedEvent,
     ParticipantUpdatedEvent,
 )
-from domain.models.participant import Participant
+from models.participant import Participant
 
 
 class TestParticipantEventListener:
