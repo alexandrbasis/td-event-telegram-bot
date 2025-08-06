@@ -36,6 +36,7 @@ from src.repositories.participant_repository import SqliteParticipantRepository
 from src.repositories.airtable_participant_repository import (
     AirtableParticipantRepository,
 )
+from src.repositories.airtable_client import AirtableClient
 from src.infrastructure.container import Container
 
 try:
@@ -1919,8 +1920,6 @@ async def process_participant_confirmation(
 @require_role("coordinator")
 @smart_cleanup_on_error
 @log_state_transitions
-
-
 def format_participant_full_info(data: Dict) -> str:
     """Форматирует полную информацию об участнике для финального отображения."""
     participant_id = data.get("id")
@@ -1946,6 +1945,7 @@ def format_participant_full_info(data: Dict) -> str:
         info += f"📞 Контакты: {data['ContactInformation']}\n"
 
     return info
+
 
 @require_role("coordinator")
 @log_state_transitions
@@ -2343,8 +2343,6 @@ def main():
 
         # Test Airtable connection
         try:
-            from repositories.airtable_client import AirtableClient
-
             client = AirtableClient()
             if not client.test_connection():
                 print("❌ ERROR: Cannot connect to Airtable!")
