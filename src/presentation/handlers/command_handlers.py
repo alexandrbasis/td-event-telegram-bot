@@ -2,6 +2,8 @@ from datetime import datetime
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import ContextTypes, ConversationHandler
 
+from application.use_cases.search_participant import SearchParticipantsQuery
+from application.use_cases.update_participant import UpdateParticipantCommand
 from presentation.handlers.base_handler import BaseHandler
 from utils.decorators import require_role
 from utils.session_recovery import detect_interrupted_session, handle_session_recovery
@@ -114,6 +116,27 @@ class AddCommandHandler(BaseHandler):
     async def handle(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         return await self._handle(update, context)
 
+
+
+class UpdateParticipantHandler(BaseHandler):
+    def __init__(self, container):
+        super().__init__(container)
+        self.update_use_case = container.update_participant_use_case()
+        self._handle = require_role("coordinator")(self._handle)
+
+    async def _handle(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        user_id = update.effective_user.id
+        participant_id = context.user_data.get("participant_id")
+        data = context.user_data.get("parsed_participant", {})
+        if participant_id is None:
+            await update.message.reply_text("❌ Участник не выбран")
+            return
+        command = UpdateParticipantCommand(user_id=user_id, participant_id=participant_id, participant_data=data)
+        participant = await self.update_use_case.execute(command)
+        await update.message.reply_text(f"✏️ Участник '{participant.full_name_ru}' обновлен")
+
+    async def handle(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        return await self._handle(update, context)
 
 class HelpCommandHandler(BaseHandler):
     def __init__(self, container):
@@ -238,6 +261,7 @@ class ListCommandHandler(BaseHandler):
 class SearchCommandHandler(BaseHandler):
     def __init__(self, container):
         super().__init__(container)
+        self.search_use_case = container.search_participants_use_case()
         self._handle = require_role("viewer")(self._handle)
 
     async def _handle(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -251,6 +275,20 @@ class SearchCommandHandler(BaseHandler):
                 user_id, "command_start", {"command": "/search"}
             )
         _record_action(context, "/search:start")
+        text = update.message.text or ""
+        parts = text.split(maxsplit=1)
+        if len(parts) > 1:
+            query_text = parts[1]
+            results = await self.search_use_case.execute(SearchParticipantsQuery(query_text, user_id=user_id))
+            if results:
+                formatted = [f"- {r.participant.FullNameRU} (ID: {r.participant.id})" for r in results]
+                message = "\n".join(formatted)
+            else:
+                message = "❌ Ничего не найдено"
+            await _send_response_with_menu_button(update, message)
+            if self.user_logger:
+                self.user_logger.log_user_action(user_id, "command_end", {"command": "/search", "count": len(results)})
+            return ConversationHandler.END
         return await _show_search_prompt(update, context, is_callback=False)
 
     async def handle(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
