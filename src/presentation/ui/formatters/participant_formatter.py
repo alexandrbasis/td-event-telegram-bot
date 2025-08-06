@@ -1,6 +1,6 @@
 from dataclasses import asdict
 
-from models.participant import Participant
+from src.models.participant import Participant
 
 
 def format_participant(participant: Participant) -> str:

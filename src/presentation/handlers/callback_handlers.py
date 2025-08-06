@@ -8,9 +8,9 @@ from main import (
     get_duplicate_keyboard,
     get_post_action_keyboard,
     format_participant_full_info,
-    format_participant_block,
     cleanup_user_data_safe,
 )
+from src.presentation.ui.formatters import MessageFormatter
 from states import COLLECTING_DATA, CONFIRMING_DUPLICATE
 from messages import MESSAGES
 from application.use_cases.add_participant import AddParticipantCommand
@@ -257,7 +257,7 @@ class SaveConfirmationCallbackHandler(BaseHandler):
             if existing and existing.FullNameRU.lower() == name.lower():
                 context.user_data["existing_participant_id"] = existing.id
                 message = "⚠️ **Найден дубликат!**\n\n"
-                message += format_participant_block(asdict(existing))
+                message += MessageFormatter.format_participant_info(asdict(existing))
                 message += "\n\nЧто делаем?"
                 await query.message.reply_text(
                     message,

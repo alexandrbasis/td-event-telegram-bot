@@ -1,5 +1,5 @@
 import unittest
-from src.services.participant_service import (
+from src.presentation.ui.keyboard_factory import (
     get_edit_keyboard,
     get_gender_selection_keyboard_simple,
     get_role_selection_keyboard,
@@ -78,8 +78,11 @@ class EditKeyboardTestCase(unittest.TestCase):
         self.assertNotIn("manual_input_Department", datas_dept)
 
         kb_gender = get_gender_selection_keyboard_required()
-        datas_gender = [b.callback_data for row in kb_gender.inline_keyboard for b in row]
+        datas_gender = [
+            b.callback_data for row in kb_gender.inline_keyboard for b in row
+        ]
         self.assertNotIn("manual_input_Gender", datas_gender)
+
 
 if __name__ == "__main__":
     unittest.main()

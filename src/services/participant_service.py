@@ -1,25 +1,9 @@
 import json
 import logging
-import logging
 import time
 from dataclasses import asdict, dataclass
 from typing import Dict, List, Optional, Tuple, Union
 
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup
-
-from ..presentation.ui.legacy_keyboards import (
-    get_department_selection_keyboard,
-    get_department_selection_keyboard_required,
-    get_edit_keyboard,
-    get_gender_selection_keyboard,
-    get_gender_selection_keyboard_required,
-    get_gender_selection_keyboard_simple,
-    get_role_selection_keyboard,
-    get_role_selection_keyboard_required,
-    get_size_selection_keyboard,
-    get_size_selection_keyboard_required,
-)
-from ..presentation.ui.formatters import MessageFormatter
 from ..repositories.participant_repository import AbstractParticipantRepository
 from ..models.participant import Participant
 from ..database import find_participant_by_name
@@ -109,11 +93,6 @@ def merge_participant_data(
         merged["Department"] = ""
 
     return merged
-
-
-def format_participant_block(data: Dict) -> str:
-    """Proxy to new message formatter for backward compatibility."""
-    return MessageFormatter.format_participant_info(data)
 
 
 def detect_changes(old: Dict, new: Dict) -> List[str]:
