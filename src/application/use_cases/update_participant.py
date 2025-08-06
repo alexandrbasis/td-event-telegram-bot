@@ -3,15 +3,15 @@ from dataclasses import asdict, dataclass
 from datetime import datetime
 from typing import Dict
 
-from src.domain.services.participant_validator import ParticipantValidator
-from src.domain.services.duplicate_checker import DuplicateCheckerService
-from src.models.participant import Participant
-from src.domain.specifications.participant_specifications import (
+from domain.services.participant_validator import ParticipantValidator
+from domain.services.duplicate_checker import DuplicateCheckerService
+from models.participant import Participant
+from domain.specifications.participant_specifications import (
     TeamRoleRequiresDepartmentSpecification,
 )
-from src.domain.interfaces.repositories import ParticipantRepositoryInterface
-from src.shared.event_dispatcher import EventDispatcher
-from src.shared.exceptions import ValidationError, DuplicateParticipantError
+from domain.interfaces.repositories import ParticipantRepositoryInterface
+from shared.event_dispatcher import EventDispatcher
+from shared.exceptions import ValidationError, DuplicateParticipantError
 from .decorators import log_use_case
 
 
@@ -72,7 +72,7 @@ class UpdateParticipantUseCase:
 
         result = await self.repository.save(updated_participant)
         if result:
-            from src.domain.events.participant_events import ParticipantUpdatedEvent
+            from domain.events.participant_events import ParticipantUpdatedEvent
 
             event = ParticipantUpdatedEvent(
                 participant=result,

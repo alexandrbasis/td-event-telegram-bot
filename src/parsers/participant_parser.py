@@ -3,15 +3,15 @@ from dataclasses import dataclass
 import re
 import logging
 
-from src.utils.field_normalizer import (
+from utils.field_normalizer import (
     field_normalizer,
     normalize_gender,
     normalize_role,
     normalize_size,
     normalize_department,
 )
-from src.utils.cache import cache
-from src.utils.recognizers import (
+from utils.cache import cache
+from utils.recognizers import (
     recognize_role,
     recognize_gender,
     recognize_size,
@@ -19,7 +19,7 @@ from src.utils.recognizers import (
     recognize_church,
     recognize_city,
 )
-from src.constants import (
+from constants import (
     gender_from_display,
     role_from_display,
     size_from_display,

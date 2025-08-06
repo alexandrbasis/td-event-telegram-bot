@@ -39,7 +39,7 @@ async def handle_session_recovery(
     """Предлагает пользователю восстановить прерванную сессию."""
     user_id = update.effective_user.id if update.effective_user else None
 
-    from src.utils.user_logger import UserActionLogger
+    from utils.user_logger import UserActionLogger
 
     user_logger = UserActionLogger()
     user_logger.log_user_action(
@@ -47,9 +47,7 @@ async def handle_session_recovery(
         "session_recovery_offered",
         {
             "has_add_flow": bool(context.user_data.get("add_flow_data")),
-            "has_parsed_participant": bool(
-                context.user_data.get("parsed_participant")
-            ),
+            "has_parsed_participant": bool(context.user_data.get("parsed_participant")),
             "has_field_edit": bool(context.user_data.get("field_to_edit")),
         },
     )

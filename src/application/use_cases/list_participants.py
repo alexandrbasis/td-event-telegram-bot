@@ -1,8 +1,8 @@
 import logging
 from typing import List
 
-from src.services.participant_service import ParticipantService
-from src.models.participant import Participant
+from services.participant_service import ParticipantService
+from models.participant import Participant
 from .decorators import log_use_case
 
 

@@ -1,6 +1,6 @@
-from src.domain.interfaces.repositories import ParticipantRepositoryInterface
-from src.models.participant import Participant
-from src.repositories.participant_repository import SqliteParticipantRepository
+from domain.interfaces.repositories import ParticipantRepositoryInterface
+from models.participant import Participant
+from repositories.participant_repository import SqliteParticipantRepository
 
 
 class ParticipantRepositoryAdapter(ParticipantRepositoryInterface):

@@ -2,8 +2,8 @@ from dataclasses import asdict
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import ContextTypes, ConversationHandler
 
-from src.presentation.handlers.base_handler import BaseHandler
-from src.utils.decorators import require_role
+from presentation.handlers.base_handler import BaseHandler
+from utils.decorators import require_role
 from main import (
     _add_message_to_cleanup,
     _cleanup_messages,
@@ -17,11 +17,11 @@ from main import (
     show_confirmation,
     cleanup_user_data_safe,
 )
-from src.states import COLLECTING_DATA, CONFIRMING_DUPLICATE
-from src.messages import MESSAGES
-from src.application.use_cases.add_participant import AddParticipantCommand
-from src.application.use_cases.update_participant import UpdateParticipantCommand
-from src.application.use_cases.search_participant import SearchParticipantsQuery
+from states import COLLECTING_DATA, CONFIRMING_DUPLICATE
+from messages import MESSAGES
+from application.use_cases.add_participant import AddParticipantCommand
+from application.use_cases.update_participant import UpdateParticipantCommand
+from application.use_cases.search_participant import SearchParticipantsQuery
 
 
 class AddCallbackHandler(BaseHandler):
@@ -87,7 +87,9 @@ class SearchCallbackHandler(BaseHandler):
         user_id = update.effective_user.id
         if self.logger:
             self.logger.info(f"🔍 handle_search_callback called for user {user_id}")
-            self.logger.debug(f"user_data before search: {list(context.user_data.keys())}")
+            self.logger.debug(
+                f"user_data before search: {list(context.user_data.keys())}"
+            )
 
         if context.user_data:
             if self.logger:
@@ -97,9 +99,7 @@ class SearchCallbackHandler(BaseHandler):
             context.user_data.clear()
 
         if self.user_logger:
-            self.user_logger.log_user_action(
-                user_id, "search_callback_triggered", {}
-            )
+            self.user_logger.log_user_action(user_id, "search_callback_triggered", {})
 
         return await _show_search_prompt(update, context, is_callback=True)
 
@@ -212,6 +212,7 @@ class SaveConfirmationCallbackHandler(BaseHandler):
     def __init__(self, container):
         super().__init__(container)
         from main import smart_cleanup_on_error, log_state_transitions
+
         self.add_use_case = container.add_participant_use_case()
         self.update_use_case = container.update_participant_use_case()
         self.search_use_case = container.search_participants_use_case()
@@ -228,8 +229,7 @@ class SaveConfirmationCallbackHandler(BaseHandler):
         if self.logger:
             self.logger.info(f"Save confirmation requested by user {user_id}")
             self.logger.debug(f"callback_data: {query.data}")
-            self.logger.debug(
-                f"user_data keys: {list(context.user_data.keys())}")
+            self.logger.debug(f"user_data keys: {list(context.user_data.keys())}")
 
         await query.answer()
         await _cleanup_messages(context, update.effective_chat.id)
@@ -358,9 +358,7 @@ class DuplicateCallbackHandler(BaseHandler):
         super().__init__(container)
         from main import smart_cleanup_on_error, log_state_transitions
 
-        self._handle = smart_cleanup_on_error(
-            log_state_transitions(self._handle)
-        )
+        self._handle = smart_cleanup_on_error(log_state_transitions(self._handle))
 
     async def _handle(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         query = update.callback_query
@@ -438,13 +436,9 @@ class DuplicateCallbackHandler(BaseHandler):
                         reply_markup=get_post_action_keyboard(),
                     )
                 else:
-                    await query.message.reply_text(
-                        "❌ Ошибка обновления участника."
-                    )
+                    await query.message.reply_text("❌ Ошибка обновления участника.")
             else:
-                await query.message.reply_text(
-                    "❌ Существующий участник не найден."
-                )
+                await query.message.reply_text("❌ Существующий участник не найден.")
 
         return ConversationHandler.END
 

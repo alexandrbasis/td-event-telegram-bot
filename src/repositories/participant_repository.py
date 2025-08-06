@@ -2,7 +2,7 @@ from abc import ABC, abstractmethod
 from typing import List, Dict, Optional, Set, Union
 
 # Используем dataclass из models, чтобы работать с объектами, а не словарями
-from src.models.participant import Participant
+from models.participant import Participant
 
 
 class AbstractParticipantRepository(ABC):
@@ -150,7 +150,7 @@ import logging
 from dataclasses import asdict
 
 # Импортируем существующие низкоуровневые функции
-from src.database import (
+from database import (
     add_participant,
     get_participant_by_id,
     find_participant_by_name,
@@ -158,7 +158,7 @@ from src.database import (
     update_participant,
     delete_participant,
 )
-from src.shared.exceptions import (
+from shared.exceptions import (
     ParticipantNotFoundError,
     ValidationError,
     BotException,

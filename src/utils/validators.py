@@ -1,5 +1,5 @@
 from typing import Dict
-from src.messages import MESSAGES
+from messages import MESSAGES
 
 VALID_SIZES = [
     "XS",

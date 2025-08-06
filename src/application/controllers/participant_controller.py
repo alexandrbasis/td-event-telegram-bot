@@ -1,12 +1,12 @@
 from telegram import Update
 from telegram.ext import ContextTypes
 
-from src.application.use_cases.add_participant import AddParticipantCommand
-from src.application.use_cases.update_participant import UpdateParticipantCommand
-from src.application.use_cases.search_participant import SearchParticipantsQuery
-from src.shared.exceptions import ValidationError
-from src.presentation.ui import UIFactory
-from src.states import COLLECTING_DATA
+from application.use_cases.add_participant import AddParticipantCommand
+from application.use_cases.update_participant import UpdateParticipantCommand
+from application.use_cases.search_participant import SearchParticipantsQuery
+from shared.exceptions import ValidationError
+from presentation.ui import UIFactory
+from states import COLLECTING_DATA
 
 MAIN_MENU = 0
 
@@ -22,7 +22,9 @@ class ParticipantController:
 
     async def start_add_flow(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         keyboard = self.ui_factory.create_add_participant_form()
-        await update.message.reply_text("\u2795 Добавление участника", reply_markup=keyboard)
+        await update.message.reply_text(
+            "\u2795 Добавление участника", reply_markup=keyboard
+        )
         return COLLECTING_DATA
 
     async def handle_add_data(
@@ -38,13 +40,17 @@ class ParticipantController:
             await update.message.reply_text(message, reply_markup=keyboard)
             return MAIN_MENU
         except ValidationError as exc:
-            from src.presentation.ui.components.validation_ui import show_validation_errors
+            from presentation.ui.components.validation_ui import show_validation_errors
 
             await show_validation_errors(update, exc.errors)
             return COLLECTING_DATA
 
     async def handle_update(
-        self, update: Update, context: ContextTypes.DEFAULT_TYPE, participant_id: int, participant_data: dict
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+        participant_id: int,
+        participant_data: dict,
     ):
         command = UpdateParticipantCommand(
             user_id=update.effective_user.id,
@@ -57,11 +63,15 @@ class ParticipantController:
         )
         return MAIN_MENU
 
-    async def search(self, update: Update, context: ContextTypes.DEFAULT_TYPE, query: str):
+    async def search(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE, query: str
+    ):
         results = await self.search_use_case.execute(
             SearchParticipantsQuery(query, user_id=update.effective_user.id)
         )
-        lines = [f"{r.participant.FullNameRU} (ID: {r.participant.id})" for r in results]
+        lines = [
+            f"{r.participant.FullNameRU} (ID: {r.participant.id})" for r in results
+        ]
         text = "\n".join(lines) or "❌ Ничего не найдено"
         await update.message.reply_text(text)
         return MAIN_MENU

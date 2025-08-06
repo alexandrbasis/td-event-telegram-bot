@@ -1,4 +1,4 @@
-from src.presentation.handlers.base_handler import BaseHandler
+from presentation.handlers.base_handler import BaseHandler
 
 
 class PlaceholderMiddlewareHandler(BaseHandler):

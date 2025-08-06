@@ -1,6 +1,6 @@
 from typing import Optional
-from src.utils.cache import cache
-from src.utils.field_normalizer import (
+from utils.cache import cache
+from utils.field_normalizer import (
     normalize_gender,
     normalize_role,
     normalize_size,
@@ -39,9 +39,11 @@ def recognize_department(token: str) -> Optional[str]:
         return None
 
     try:  # pragma: no cover - optional dependency
-        from src.parsers.participant_parser import FuzzyMatcher
+        from parsers.participant_parser import FuzzyMatcher
 
-        matcher = FuzzyMatcher(similarity_threshold=0.8)  # Строгий порог для департаментов
+        matcher = FuzzyMatcher(
+            similarity_threshold=0.8
+        )  # Строгий порог для департаментов
         fuzzy_result = matcher.find_best_department_match(token)
         return fuzzy_result[0] if fuzzy_result else None
     except ImportError:
@@ -56,7 +58,7 @@ def recognize_church(token: str) -> Optional[str]:
     churches = get_reference_data("churches")
 
     try:  # pragma: no cover - optional dependency
-        from src.parsers.participant_parser import FuzzyMatcher
+        from parsers.participant_parser import FuzzyMatcher
 
         matcher = FuzzyMatcher()
         fuzzy_result = matcher.find_best_church_match(token, churches)

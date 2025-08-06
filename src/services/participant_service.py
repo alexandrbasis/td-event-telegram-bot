@@ -7,7 +7,7 @@ from typing import Dict, List, Optional, Tuple, Union
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
-from src.presentation.ui.legacy_keyboards import (
+from presentation.ui.legacy_keyboards import (
     get_department_selection_keyboard,
     get_department_selection_keyboard_required,
     get_edit_keyboard,
@@ -19,18 +19,18 @@ from src.presentation.ui.legacy_keyboards import (
     get_size_selection_keyboard,
     get_size_selection_keyboard_required,
 )
-from src.presentation.ui.formatters import MessageFormatter
-from src.repositories.participant_repository import AbstractParticipantRepository
-from src.models.participant import Participant
-from src.database import find_participant_by_name
-from src.utils.validators import validate_participant_data
-from src.shared.exceptions import (
+from presentation.ui.formatters import MessageFormatter
+from repositories.participant_repository import AbstractParticipantRepository
+from models.participant import Participant
+from database import find_participant_by_name
+from utils.validators import validate_participant_data
+from shared.exceptions import (
     DuplicateParticipantError,
     ParticipantNotFoundError,
     ValidationError,
 )
-from src.parsers.participant_parser import normalize_field_value
-from src.constants import (
+from parsers.participant_parser import normalize_field_value
+from constants import (
     GENDER_DISPLAY,
     ROLE_DISPLAY,
     SIZE_DISPLAY,
