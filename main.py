@@ -159,6 +159,21 @@ def create_application():
         )
         application.add_handler(CommandHandler(command, wrapped))
 
+    callback_map = {
+        "add_callback_handler": "^main_add$",
+        "search_callback_handler": "^main_search$",
+        "main_menu_callback_handler": "^main_(list|export|help|menu|cancel)$",
+        "save_confirmation_callback_handler": "^confirm_save$",
+        "duplicate_callback_handler": "^dup_",
+    }
+
+    for provider_name, pattern in callback_map.items():
+        handler_instance = getattr(container, provider_name)()
+        wrapped = compose_middleware(
+            handler_instance, [auth_middleware, logging_middleware]
+        )
+        application.add_handler(CallbackQueryHandler(wrapped, pattern=pattern))
+
     return application, container
 
 

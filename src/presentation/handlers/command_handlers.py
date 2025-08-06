@@ -197,6 +197,7 @@ class ListCommandHandler(BaseHandler):
     def __init__(self, container):
         super().__init__(container)
         self.list_use_case = container.list_participants_use_case()
+        self.ui_factory = container.ui_factory()
         self._handle = require_role("viewer")(self._handle)
 
     async def _handle(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
