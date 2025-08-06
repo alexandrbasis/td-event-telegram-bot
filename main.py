@@ -1,6 +1,12 @@
 import logging
 import re
 import time
+
+import sys
+from pathlib import Path
+
+sys.path.append(str(Path(__file__).resolve().parent / "src"))
+
 import traceback
 from collections import defaultdict
 from datetime import datetime
@@ -8,12 +14,6 @@ from functools import wraps
 from logging.handlers import RotatingFileHandler
 from dataclasses import asdict
 from typing import Dict, List, Optional
-
-import sys
-from pathlib import Path
-
-sys.path.append(str(Path(__file__).resolve().parent / "src"))
-
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import (
