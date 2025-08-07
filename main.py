@@ -20,6 +20,7 @@ from telegram.ext import (
     MessageHandler,
     filters,
 )
+from src.infrastructure.container import Container
 from src.presentation.middleware import AuthMiddleware, LoggingMiddleware
 import src.config as config
 from src.config import BOT_TOKEN, BOT_USERNAME, COORDINATOR_IDS, VIEWER_IDS
@@ -37,7 +38,6 @@ from src.repositories.airtable_participant_repository import (
     AirtableParticipantRepository,
 )
 from src.repositories.airtable_client import AirtableClient
-from src.infrastructure.container import Container
 
 try:
     from pyairtable.api.exceptions import AirtableApiError
@@ -2361,7 +2361,7 @@ def main():
     # Initialize dependency container and application
     global participant_service
     application, container = create_application()
-    container.configure_events()
+    Container.configure_events(container)
     container.config.from_dict(
         {
             "database": {"path": "participants.db"},
