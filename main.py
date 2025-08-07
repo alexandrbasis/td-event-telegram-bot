@@ -2419,7 +2419,7 @@ def main():
             ),
         ],
         per_chat=True,
-        per_message=False,
+        per_message=True,  # ✅ ИЗМЕНЕНО: было False
     )
 
     add_conv = ConversationHandler(
@@ -2484,7 +2484,7 @@ def main():
             CallbackQueryHandler(cancel_callback, pattern="^main_cancel$"),
         ],
         per_chat=True,
-        per_message=False,
+        per_message=True,  # ✅ ИЗМЕНЕНО: было False
     )
     # ConversationHandler должен быть зарегистрирован первым
     application.add_handler(search_conv)
