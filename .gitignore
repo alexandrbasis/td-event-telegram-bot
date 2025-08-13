@@ -25,3 +25,21 @@ CLAUDE.md
 # Logs
 logs/
 *.log
+
+# Development files
+tasks/
+AGENTS.md
+activate_venv.sh
+test_airtable_connection.py
+test_airtable_repository.py
+
+# Temporary files
+*.tmp
+*.temp
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Editor files
+*.sublime-*
+.vscode/settings.json
