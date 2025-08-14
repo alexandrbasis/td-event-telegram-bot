@@ -41,7 +41,12 @@ class AirtableParticipantRepository(BaseParticipantRepository):
         self.table = self.client.participants_table
 
     def _participant_to_airtable_fields(self, participant: Participant) -> dict:
-        """Convert Participant dataclass to Airtable fields."""
+        """Convert Participant dataclass to Airtable fields.
+
+        Special handling for Airtable Single Select fields: do not send empty
+        strings which would be treated as a request to create a new option "".
+        - Department: omit when empty or when Role is CANDIDATE.
+        """
         fields = {
             'FullNameRU': participant.FullNameRU,
             'FullNameEN': participant.FullNameEN or '',
@@ -49,13 +54,19 @@ class AirtableParticipantRepository(BaseParticipantRepository):
             'Size': participant.Size or '',
             'Church': participant.Church or '',
             'Role': participant.Role or '',
-            'Department': participant.Department or '',
             'CountryAndCity': participant.CountryAndCity or '',
             'SubmittedBy': participant.SubmittedBy or '',
             'ContactInformation': participant.ContactInformation or '',
             'PaymentStatus': participant.PaymentStatus or 'Unpaid',
             'PaymentAmount': participant.PaymentAmount or 0,
         }
+
+        # Department handling
+        if participant.Role == 'TEAM':
+            if participant.Department:
+                fields['Department'] = participant.Department
+        # If Role is CANDIDATE or Department is empty, we intentionally omit it
+
         if participant.PaymentDate:
             fields['PaymentDate'] = _normalize_date_to_iso(participant.PaymentDate)
         return fields
@@ -162,6 +173,9 @@ class AirtableParticipantRepository(BaseParticipantRepository):
 
         try:
             fields = self._participant_to_airtable_fields(participant)
+            # If role is CANDIDATE ensure Department is cleared in Airtable
+            if fields.get('Role') == 'CANDIDATE':
+                fields['Department'] = None
             self.table.update(participant.id, fields)
 
             logger.info(f"Successfully updated participant {participant.id}")
@@ -192,6 +206,17 @@ class AirtableParticipantRepository(BaseParticipantRepository):
                     fields['PaymentDate'] = None
                 else:
                     fields['PaymentDate'] = _normalize_date_to_iso(str(raw))
+
+            # Handle Department clearing: empty string should become None
+            if 'Department' in fields:
+                dept_raw = fields.get('Department')
+                if dept_raw is None or str(dept_raw).strip() == '':
+                    fields['Department'] = None
+
+            # If role is set to CANDIDATE but Department not explicitly provided,
+            # we should clear Department to avoid stale values in Airtable
+            if fields.get('Role') == 'CANDIDATE' and 'Department' not in fields:
+                fields['Department'] = None
 
             airtable_fields = {}
             for key, value in fields.items():
