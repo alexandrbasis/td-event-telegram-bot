@@ -33,25 +33,87 @@ class SearchFlowTestCase(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(state, SEARCHING_PARTICIPANTS)
             self.assertIn("current_state", context.user_data)
 
-            context.chat_data["conversation"] = "active"
+    async def test_new_search_works_from_selecting_participant(self):
+        context = SimpleNamespace(
+            user_data={
+                "search_results": [1, 2, 3],
+                "selected_participant": {"id": 123},
+                "payment_participant": {"id": 999},
+                "payment_amount": 150,
+                "current_state": 8,  # SELECTING_PARTICIPANT
+            },
+            chat_data={},
+        )
 
-            cancel_update = SimpleNamespace(
-                callback_query=MagicMock(answer=AsyncMock()),
-                effective_user=SimpleNamespace(id=1),
-                effective_chat=SimpleNamespace(id=1),
-            )
+        update = SimpleNamespace(
+            callback_query=MagicMock(),
+            effective_user=SimpleNamespace(id=1),
+        )
+        update.callback_query.answer = AsyncMock()
 
-            await cancel_callback(cancel_update, context)
+        async def mock_show_search_prompt(update, context, is_callback=True):
+            context.user_data["current_state"] = SEARCHING_PARTICIPANTS
+            return SEARCHING_PARTICIPANTS
 
-            self.assertEqual(context.user_data, {})
-            self.assertEqual(context.chat_data, {})
+        with patch(
+            "main._show_search_prompt", side_effect=mock_show_search_prompt
+        ), patch("main.user_logger"), patch(
+            "utils.decorators.VIEWER_IDS", [1]
+        ), patch(
+            "utils.decorators.COORDINATOR_IDS", []
+        ):
+            state = await handle_search_callback(update, context)
 
-            update2 = SimpleNamespace(
-                callback_query=MagicMock(), effective_user=SimpleNamespace(id=1)
-            )
-            state2 = await handle_search_callback(update2, context)
-            self.assertEqual(state2, SEARCHING_PARTICIPANTS)
-            self.assertIn("current_state", context.user_data)
+        self.assertEqual(state, SEARCHING_PARTICIPANTS)
+        # Relevant keys must be cleaned
+        for key in [
+            "search_results",
+            "selected_participant",
+            "payment_participant",
+            "payment_amount",
+        ]:
+            self.assertNotIn(key, context.user_data)
+        self.assertIn("current_state", context.user_data)
+
+    async def test_new_search_works_from_choosing_action(self):
+        context = SimpleNamespace(
+            user_data={
+                "selected_participant": {"id": 123},
+                "payment_participant": {"id": 999},
+                "payment_amount": 150,
+                "current_state": 9,  # CHOOSING_ACTION
+            },
+            chat_data={},
+        )
+
+        update = SimpleNamespace(
+            callback_query=MagicMock(),
+            effective_user=SimpleNamespace(id=1),
+        )
+        update.callback_query.answer = AsyncMock()
+
+        async def mock_show_search_prompt(update, context, is_callback=True):
+            context.user_data["current_state"] = SEARCHING_PARTICIPANTS
+            return SEARCHING_PARTICIPANTS
+
+        with patch(
+            "main._show_search_prompt", side_effect=mock_show_search_prompt
+        ), patch("main.user_logger"), patch(
+            "utils.decorators.VIEWER_IDS", [1]
+        ), patch(
+            "utils.decorators.COORDINATOR_IDS", []
+        ):
+            state = await handle_search_callback(update, context)
+
+        self.assertEqual(state, SEARCHING_PARTICIPANTS)
+        for key in [
+            "search_results",
+            "selected_participant",
+            "payment_participant",
+            "payment_amount",
+        ]:
+            self.assertNotIn(key, context.user_data)
+        self.assertIn("current_state", context.user_data)
 
 
 class TestSearchExcludesDeletedParticipant(unittest.TestCase):

@@ -1,6 +1,6 @@
 # Test Structure Documentation
 
-**Version**: 1.8  
+**Version**: 1.9  
 **Last Updated**: August 14, 2025
 
 ## Overview
@@ -50,7 +50,7 @@ tests/
 │
 ├── Async Tests (Bot interactions)
 │   ├── test_recover.py            # Error recovery flows
-│   ├── test_search_flow.py        # Search conversation flows (+cache invalidation tests v1.8)
+│   ├── test_search_flow.py        # Search conversation flows (+cache invalidation tests v1.8; new-search flow tests v1.9)
 │   ├── test_delete_logging.py     # Delete logging validation (v1.8)
 │   ├── test_enum_selection_context.py # UI interactions
 │   ├── test_field_edit_cancel.py  # Cancel operations
@@ -374,6 +374,19 @@ class TestJSONSerializationFix(unittest.TestCase):
              patch("main._cleanup_messages", new=AsyncMock()):
             state = await handle_search_callback(update, context)
             self.assertEqual(state, SEARCHING_PARTICIPANTS)
+```
+
+##### New in v1.9 — New Search Button Behavior
+```python
+class SearchFlowTestCase(unittest.IsolatedAsyncioTestCase):
+    async def test_new_search_works_from_selecting_participant(self):
+        # Verify that pressing "🔍 Новый поиск" from results screen cleans prior context
+        # and transitions to SEARCHING_PARTICIPANTS with a fresh prompt
+        ...
+
+    async def test_new_search_works_from_choosing_action(self):
+        # Verify that pressing "🔍 Новый поиск" from actions screen behaves identically
+        ...
 ```
 
 ### 4. UI/UX Tests

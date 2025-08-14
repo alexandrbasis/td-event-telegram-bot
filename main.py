@@ -1293,7 +1293,24 @@ async def handle_search_callback(
         logger.warning(
             f"Found existing user_data during search start: {list(context.user_data.keys())}"
         )
-        # Не очищаем user_data, чтобы не нарушить состояние ConversationHandler
+        # Аккуратно очищаем только релевантные ключи поиска/оплаты, не трогая остальное
+        keys_to_remove = [
+            "search_results",
+            "selected_participant",
+            "payment_participant",
+            "payment_amount",
+        ]
+        removed_keys = []
+        for key in keys_to_remove:
+            if key in context.user_data:
+                context.user_data.pop(key, None)
+                removed_keys.append(key)
+        if removed_keys:
+            logger.info(
+                "Cleared keys before starting a new search for user %s: %s",
+                user_id,
+                removed_keys,
+            )
 
     user_logger.log_user_action(user_id, "search_callback_triggered", {})
 
