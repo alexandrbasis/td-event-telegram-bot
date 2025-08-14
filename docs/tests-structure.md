@@ -1,6 +1,6 @@
 # Test Structure Documentation
 
-**Version**: 1.7  
+**Version**: 1.8  
 **Last Updated**: August 14, 2025
 
 ## Overview
@@ -50,7 +50,8 @@ tests/
 │
 ├── Async Tests (Bot interactions)
 │   ├── test_recover.py            # Error recovery flows
-│   ├── test_search_flow.py        # Search conversation flows
+│   ├── test_search_flow.py        # Search conversation flows (+cache invalidation tests v1.8)
+│   ├── test_delete_logging.py     # Delete logging validation (v1.8)
 │   ├── test_enum_selection_context.py # UI interactions
 │   ├── test_field_edit_cancel.py  # Cancel operations
 │   ├── test_search_double_messages.py # Search flow issues analysis (v1.3)

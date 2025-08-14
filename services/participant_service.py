@@ -502,6 +502,13 @@ class ParticipantService:
                 ensure_ascii=False,
             )
         )
+        # Update cache immediately
+        try:
+            if self._participants_cache is not None:
+                self._participants_cache.append(new_participant)
+                self._cache_timestamp = time.time()
+        except Exception:
+            self._participants_cache = None
         return new_participant
 
     def update_participant(
@@ -549,6 +556,20 @@ class ParticipantService:
                 ensure_ascii=False,
             )
         )
+        # Update cache immediately
+        try:
+            if result and self._participants_cache is not None:
+                pid_int = int(participant_id) if isinstance(participant_id, str) else participant_id
+                for idx, cached in enumerate(self._participants_cache):
+                    if cached.id == pid_int:
+                        self._participants_cache[idx] = updated_participant
+                        break
+                else:
+                    # Not found in cache, append to keep cache consistent
+                    self._participants_cache.append(updated_participant)
+                self._cache_timestamp = time.time()
+        except Exception:
+            self._participants_cache = None
         return result
 
     def update_participant_fields(
@@ -565,21 +586,17 @@ class ParticipantService:
             service.update_participant_fields(123, FullNameRU="Новое имя", Gender="M")
         """
 
-        if fields:
-            temp_data = {
-                "FullNameRU": "temp",
-                "Gender": "F",
-                "Church": "temp",
-                "Role": "CANDIDATE",
-                **fields,
-            }
-
-            valid, error = validate_participant_data(temp_data)
-            if not valid:
-                field_names = set(fields.keys())
-                critical_fields = {"FullNameRU", "Gender", "Church", "Role"}
-                if field_names & critical_fields:
-                    raise ValidationError(error)
+        # Validate against merged current data to avoid false negatives on missing fields
+        current = self.repository.get_by_id(participant_id)
+        if current is None:
+            raise ParticipantNotFoundError(
+                f"Participant with id {participant_id} not found"
+            )
+        merged_dict = asdict(current)
+        merged_dict.update(fields)
+        valid, error = validate_participant_data(merged_dict)
+        if not valid:
+            raise ValidationError(error)
 
         start = time.time()
         result = self.repository.update_fields(participant_id, **fields)
@@ -598,6 +615,18 @@ class ParticipantService:
                 ensure_ascii=False,
             )
         )
+        # Update cache immediately
+        try:
+            if result and self._participants_cache is not None:
+                pid_int = int(participant_id) if isinstance(participant_id, str) else participant_id
+                for cached in self._participants_cache:
+                    if cached.id == pid_int:
+                        for key, value in fields.items():
+                            setattr(cached, key, value)
+                        break
+                self._cache_timestamp = time.time()
+        except Exception:
+            self._participants_cache = None
         return result
 
     def get_participant(self, participant_id: Union[int, str]) -> Optional[Participant]:
@@ -638,6 +667,17 @@ class ParticipantService:
                 ensure_ascii=False,
             )
         )
+        # Invalidate or update cache immediately after successful deletion
+        try:
+            if result and self._participants_cache is not None:
+                pid_int = int(participant_id) if isinstance(participant_id, str) else participant_id
+                self._participants_cache = [
+                    p for p in self._participants_cache if p.id != pid_int
+                ]
+                self._cache_timestamp = time.time()
+        except Exception:
+            # If anything goes wrong with cache update, force full cache refresh next time
+            self._participants_cache = None
         return result
 
     def participant_exists(self, participant_id: Union[int, str]) -> bool:
@@ -875,6 +915,20 @@ class ParticipantService:
             {"PaymentStatus": status, "PaymentAmount": amount, "PaymentDate": payment_date},
             participant_id=participant_id
         )
+        
+        # Update cache immediately
+        try:
+            if success and self._participants_cache is not None:
+                pid_int = int(participant_id) if isinstance(participant_id, str) else participant_id
+                for cached in self._participants_cache:
+                    if cached.id == pid_int:
+                        cached.PaymentStatus = status
+                        cached.PaymentAmount = amount
+                        cached.PaymentDate = payment_date
+                        break
+                self._cache_timestamp = time.time()
+        except Exception:
+            self._participants_cache = None
         
         return success
 
