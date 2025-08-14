@@ -49,3 +49,33 @@ def test_update_fields_sets_department_null_when_empty(monkeypatch):
     assert "Department" in fields and fields["Department"] is None
 
 
+def test_update_clears_department_when_role_is_candidate(monkeypatch):
+    monkeypatch.setenv("AIRTABLE_TOKEN", "test")
+    monkeypatch.setenv("AIRTABLE_BASE_ID", "test")
+    repo = make_repo()
+
+    # simulate full update of a participant switching to CANDIDATE
+    p = Participant(FullNameRU="X", Role="CANDIDATE", Department="Worship")
+    p.id = "rec1"
+    repo.update(p)
+
+    rec_id, fields = repo.table.last_update
+    assert rec_id == "rec1"
+    assert fields.get("Role") == "CANDIDATE"
+    # Must explicitly clear Department with null
+    assert "Department" in fields and fields["Department"] is None
+
+
+def test_update_fields_role_candidate_clears_department_when_not_provided(monkeypatch):
+    monkeypatch.setenv("AIRTABLE_TOKEN", "test")
+    monkeypatch.setenv("AIRTABLE_BASE_ID", "test")
+    repo = make_repo()
+
+    # Only Role is provided; Department not provided and should be cleared
+    repo.update_fields("rec2", Role="CANDIDATE")
+    rec_id, fields = repo.table.last_update
+    assert rec_id == "rec2"
+    assert fields.get("Role") == "CANDIDATE"
+    assert "Department" in fields and fields["Department"] is None
+
+

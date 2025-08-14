@@ -173,6 +173,9 @@ class AirtableParticipantRepository(BaseParticipantRepository):
 
         try:
             fields = self._participant_to_airtable_fields(participant)
+            # If role is CANDIDATE ensure Department is cleared in Airtable
+            if fields.get('Role') == 'CANDIDATE':
+                fields['Department'] = None
             self.table.update(participant.id, fields)
 
             logger.info(f"Successfully updated participant {participant.id}")
@@ -209,6 +212,11 @@ class AirtableParticipantRepository(BaseParticipantRepository):
                 dept_raw = fields.get('Department')
                 if dept_raw is None or str(dept_raw).strip() == '':
                     fields['Department'] = None
+
+            # If role is set to CANDIDATE but Department not explicitly provided,
+            # we should clear Department to avoid stale values in Airtable
+            if fields.get('Role') == 'CANDIDATE' and 'Department' not in fields:
+                fields['Department'] = None
 
             airtable_fields = {}
             for key, value in fields.items():
