@@ -9,6 +9,7 @@ from utils.field_normalizer import (
     normalize_role,
     normalize_size,
     normalize_department,
+    normalize_payment_status,
 )
 from utils.cache import cache
 from utils.recognizers import (
@@ -18,12 +19,14 @@ from utils.recognizers import (
     recognize_department,
     recognize_church,
     recognize_city,
+    recognize_payment_status,
 )
 from constants import (
     gender_from_display,
     role_from_display,
     size_from_display,
     department_from_display,
+    payment_status_from_display,
 )
 
 
@@ -445,6 +448,9 @@ TEMPLATE_FIELD_MAP = {
     "Город": "CountryAndCity",
     "Кто подал": "SubmittedBy",
     "Контакты": "ContactInformation",
+    "Статус оплаты": "PaymentStatus",
+    "Сумма оплаты": "PaymentAmount",
+    "Дата оплаты": "PaymentDate",
 }
 
 # Mapping of Cyrillic size abbreviations to Latin equivalents for template parsing
@@ -506,6 +512,23 @@ def parse_template_format(text: str) -> Dict:
                 elif eng == "Size":
                     value = CYRILLIC_TO_LATIN.get(value.lower(), value)
                     norm = size_from_display(value) or normalize_size(value) or ""
+                elif eng == "PaymentStatus":
+                    norm = (
+                        payment_status_from_display(value)
+                        or normalize_payment_status(value)
+                        or ""
+                    )
+                elif eng == "PaymentAmount":
+                    # Extract integer from amount text
+                    try:
+                        # Remove non-numeric characters except digits
+                        amount_str = re.sub(r'[^\d]', '', value)
+                        norm = int(amount_str) if amount_str else 0
+                    except ValueError:
+                        norm = 0
+                elif eng == "PaymentDate":
+                    # Keep date as string, basic validation could be added here
+                    norm = value.strip()
                 data[eng] = norm
                 break
     logger.debug("parse_template_format parsed fields: %s", list(data.keys()))
@@ -579,6 +602,39 @@ def parse_unstructured_text(text: str) -> Dict[str, str]:
     participant_data: Dict[str, str] = {}
     fv_data, text = detect_field_value_pattern(text)
     participant_data.update(fv_data)
+
+    # --- Pass 0.5: Extract payment fields from simple "Ключ: Значение" lines ---
+    # Supports lines like "Статус оплаты: Оплачено" and "Оплата: Не оплачено"
+    try:
+        for raw_line in text.splitlines():
+            if ":" not in raw_line:
+                continue
+            key_part, value_part = raw_line.split(":", 1)
+            key = key_part.strip().lower()
+            value = value_part.strip()
+
+            if key == "статус оплаты" and "PaymentStatus" not in participant_data:
+                normalized = payment_status_from_display(value) or normalize_payment_status(value) or ""
+                if normalized:
+                    participant_data["PaymentStatus"] = normalized
+
+            # Generic "Оплата: ..." can mean status or amount; detect accordingly
+            elif key == "оплата":
+                if re.search(r"\d", value) and "PaymentAmount" not in participant_data:
+                    # Extract integer amount from the value
+                    amount_str = re.sub(r"[^\d]", "", value)
+                    if amount_str:
+                        try:
+                            participant_data["PaymentAmount"] = int(amount_str)
+                        except ValueError:
+                            pass
+                elif "PaymentStatus" not in participant_data:
+                    normalized = payment_status_from_display(value) or normalize_payment_status(value) or ""
+                    if normalized:
+                        participant_data["PaymentStatus"] = normalized
+    except Exception:
+        # Non-critical parsing; ignore errors and continue
+        pass
     tokens = text.split()
     # A list to mark which tokens have been successfully parsed and "consumed"
     consumed = [False] * len(tokens)
@@ -652,6 +708,7 @@ def parse_unstructured_text(text: str) -> Dict[str, str]:
         "Department": recognize_department,
         "CountryAndCity": recognize_city,
         "Church": recognize_church,  # Fallback for single-word church names without identifier
+        "PaymentStatus": recognize_payment_status,
     }
     for i, token in enumerate(tokens):
         if consumed[i]:
@@ -678,6 +735,37 @@ def parse_unstructured_text(text: str) -> Dict[str, str]:
         if contact:
             participant_data["ContactInformation"] = contact
             consumed[i] = True
+
+    # --- Pass 3.6: Extract Payment Amount ---
+    for i, token in enumerate(tokens):
+        if consumed[i]:
+            continue
+
+        if "PaymentAmount" in participant_data:
+            break
+
+        # Look for numbers that could be payment amounts
+        if re.match(r'^\d+$', token):
+            amount = int(token)
+            # Only consider reasonable payment amounts (between 1 and 10000 shekels)
+            if 1 <= amount <= 10000:
+                # Check context for payment-related keywords
+                context_tokens = []
+                if i > 0:
+                    context_tokens.append(tokens[i-1])
+                if i < len(tokens) - 1:
+                    context_tokens.append(tokens[i+1])
+                
+                payment_keywords = {'шекель', 'шейкель', 'шекели', 'шейкели', '₪', 'ils', 
+                                   'оплата', 'платеж', 'деньги', 'сумма', 'стоимость'}
+                
+                if any(kw in ' '.join(context_tokens).lower() for kw in payment_keywords):
+                    participant_data["PaymentAmount"] = amount
+                    consumed[i] = True
+                    # Also mark currency symbols as consumed
+                    for j in [i-1, i+1]:
+                        if 0 <= j < len(tokens) and tokens[j] in ['₪', 'шекель', 'шейкель']:
+                            consumed[j] = True
 
     # --- Pass 4: Smart name extraction with context analysis ---
     name_parts = [tokens[i] for i in range(len(tokens)) if not consumed[i]]

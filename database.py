@@ -102,6 +102,9 @@ def init_database():
                     ContactInformation TEXT,
                     roomId INTEGER,
                     tableId INTEGER,
+                    PaymentStatus TEXT DEFAULT 'Unpaid',
+                    PaymentAmount INTEGER DEFAULT 0,
+                    PaymentDate TEXT DEFAULT '',
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
@@ -129,9 +132,41 @@ def init_database():
                 END;
                 """
             )
+            
+            # Run migration to add payment fields to existing databases
+            _migrate_payment_fields(cursor)
+            
             print("✅ База данных инициализирована")
     except sqlite3.Error as e:
         logger.error("Error initializing database: %s", e)
+
+
+def _migrate_payment_fields(cursor: sqlite3.Cursor) -> None:
+    """Migration to add payment fields to existing databases."""
+    try:
+        # Check if payment fields already exist
+        cursor.execute("PRAGMA table_info(participants)")
+        columns = [column[1] for column in cursor.fetchall()]
+        
+        payment_fields_to_add = []
+        if 'PaymentStatus' not in columns:
+            payment_fields_to_add.append("PaymentStatus TEXT DEFAULT 'Unpaid'")
+        if 'PaymentAmount' not in columns:
+            payment_fields_to_add.append("PaymentAmount INTEGER DEFAULT 0")
+        if 'PaymentDate' not in columns:
+            payment_fields_to_add.append("PaymentDate TEXT DEFAULT ''")
+        
+        # Add missing payment fields
+        for field_def in payment_fields_to_add:
+            cursor.execute(f"ALTER TABLE participants ADD COLUMN {field_def}")
+            logger.info(f"Added payment field: {field_def}")
+        
+        if payment_fields_to_add:
+            print(f"✅ Миграция завершена: добавлено {len(payment_fields_to_add)} полей оплаты")
+        
+    except sqlite3.Error as e:
+        logger.error("Error during payment fields migration: %s", e)
+        # Don't raise exception - let the app continue with existing schema
 
 
 def add_participant(participant_data: Dict) -> int:
@@ -143,8 +178,8 @@ def add_participant(participant_data: Dict) -> int:
                 """
                 INSERT INTO participants
                 (FullNameRU, Gender, Size, CountryAndCity, Church, Role, Department,
-                 FullNameEN, SubmittedBy, ContactInformation)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 FullNameEN, SubmittedBy, ContactInformation, PaymentStatus, PaymentAmount, PaymentDate)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     participant_data.get('FullNameRU'),
@@ -157,6 +192,9 @@ def add_participant(participant_data: Dict) -> int:
                     participant_data.get('FullNameEN'),
                     participant_data.get('SubmittedBy'),
                     participant_data.get('ContactInformation'),
+                    participant_data.get('PaymentStatus', 'Unpaid'),
+                    participant_data.get('PaymentAmount', 0),
+                    participant_data.get('PaymentDate', ''),
                 ),
             )
             participant_id = cursor.lastrowid
@@ -251,7 +289,8 @@ def update_participant(participant_id: int, participant_data: Dict) -> bool:
                 UPDATE participants SET
                 FullNameRU = ?, Gender = ?, Size = ?, CountryAndCity = ?, Church = ?,
                 Role = ?, Department = ?, FullNameEN = ?, SubmittedBy = ?,
-                ContactInformation = ?, updated_at = CURRENT_TIMESTAMP
+                ContactInformation = ?, PaymentStatus = ?, PaymentAmount = ?, PaymentDate = ?, 
+                updated_at = CURRENT_TIMESTAMP
                 WHERE id = ?
                 """,
                 (
@@ -265,6 +304,9 @@ def update_participant(participant_id: int, participant_data: Dict) -> bool:
                     participant_data.get('FullNameEN'),
                     participant_data.get('SubmittedBy'),
                     participant_data.get('ContactInformation'),
+                    participant_data.get('PaymentStatus', 'Unpaid'),
+                    participant_data.get('PaymentAmount', 0),
+                    participant_data.get('PaymentDate', ''),
                     participant_id,
                 ),
             )
@@ -320,7 +362,8 @@ def delete_participant(participant_id: int) -> bool:
 
 VALID_FIELDS = {
     'FullNameRU', 'Gender', 'Size', 'CountryAndCity', 'Church',
-    'Role', 'Department', 'FullNameEN', 'SubmittedBy', 'ContactInformation'
+    'Role', 'Department', 'FullNameEN', 'SubmittedBy', 'ContactInformation',
+    'PaymentStatus', 'PaymentAmount', 'PaymentDate'
 }
 
 
@@ -387,6 +430,125 @@ def find_participant_by_name(full_name_ru: str) -> Optional[Dict]:
         logger.error("Database error while searching participant: %s", e)
         # В случае реальной ошибки БД, мы по-прежнему генерируем исключение.
         raise BotException("Database error while searching participant") from e
+
+
+def update_payment_status(participant_id: int, status: str, amount: int, date: str) -> bool:
+    """
+    Update payment status for a specific participant.
+    
+    Args:
+        participant_id: ID of the participant
+        status: Payment status (Unpaid, Paid, Partial, Refunded)
+        amount: Payment amount in shekels (integer)
+        date: Payment date in ISO format
+        
+    Returns:
+        bool: True if update was successful
+        
+    Raises:
+        ParticipantNotFoundError: If participant not found
+        ValidationError: If validation fails
+        BotException: On database errors
+    """
+    try:
+        with DatabaseConnection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                UPDATE participants SET
+                PaymentStatus = ?, PaymentAmount = ?, PaymentDate = ?, 
+                updated_at = CURRENT_TIMESTAMP
+                WHERE id = ?
+                """,
+                (status, amount, date, participant_id),
+            )
+            if cursor.rowcount == 0:
+                raise ParticipantNotFoundError(
+                    f"Participant with id {participant_id} not found"
+                )
+            logger.info(f"Updated payment for participant {participant_id}: {status}, {amount}₪")
+            return True
+    except sqlite3.IntegrityError as e:
+        logger.error("Validation error while updating payment for participant %s: %s", participant_id, e)
+        raise ValidationError(str(e)) from e
+    except sqlite3.Error as e:
+        logger.error("Database error while updating payment for participant %s: %s", participant_id, e)
+        raise BotException("Database error while updating payment") from e
+
+
+def get_unpaid_participants() -> List[Dict]:
+    """
+    Get all participants with unpaid status.
+    
+    Returns:
+        List[Dict]: List of unpaid participants
+        
+    Raises:
+        BotException: On database errors
+    """
+    try:
+        with DatabaseConnection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                SELECT * FROM participants 
+                WHERE PaymentStatus = 'Unpaid' 
+                ORDER BY created_at DESC
+                """
+            )
+            rows = cursor.fetchall()
+            return [dict(row) for row in rows]
+    except sqlite3.Error as e:
+        logger.error("Database error while fetching unpaid participants: %s", e)
+        raise BotException("Database error while fetching unpaid participants") from e
+
+
+def get_payment_summary() -> Dict:
+    """
+    Get payment summary statistics.
+    
+    Returns:
+        Dict: Payment summary with counts and totals
+        
+    Raises:
+        BotException: On database errors
+    """
+    try:
+        with DatabaseConnection() as conn:
+            cursor = conn.cursor()
+            
+            # Get counts by payment status
+            cursor.execute(
+                """
+                SELECT PaymentStatus, COUNT(*) as count, SUM(PaymentAmount) as total
+                FROM participants 
+                GROUP BY PaymentStatus
+                """
+            )
+            status_summary = {row[0]: {"count": row[1], "total": row[2] or 0} for row in cursor.fetchall()}
+            
+            # Get overall totals
+            cursor.execute(
+                """
+                SELECT 
+                    COUNT(*) as total_participants,
+                    SUM(PaymentAmount) as total_amount,
+                    COUNT(CASE WHEN PaymentStatus = 'Paid' THEN 1 END) as paid_count
+                FROM participants
+                """
+            )
+            row = cursor.fetchone()
+            
+            return {
+                "status_breakdown": status_summary,
+                "total_participants": row[0],
+                "total_amount": row[1] or 0,
+                "paid_count": row[2],
+                "unpaid_count": row[0] - row[2]
+            }
+    except sqlite3.Error as e:
+        logger.error("Database error while fetching payment summary: %s", e)
+        raise BotException("Database error while fetching payment summary") from e
 
 
 if __name__ == "__main__":

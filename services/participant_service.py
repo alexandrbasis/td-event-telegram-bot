@@ -21,6 +21,7 @@ from constants import (
     ROLE_DISPLAY,
     SIZE_DISPLAY,
     DEPARTMENT_DISPLAY,
+    PAYMENT_STATUS_DISPLAY,
 )
 
 logger = logging.getLogger(__name__)
@@ -36,6 +37,9 @@ FIELD_LABELS = {
     "CountryAndCity": "Город",
     "SubmittedBy": "Кто подал",
     "ContactInformation": "Контакты",
+    "PaymentStatus": "Статус оплаты",
+    "PaymentAmount": "Сумма оплаты",
+    "PaymentDate": "Дата оплаты",
 }
 
 FIELD_EMOJIS = {
@@ -49,6 +53,9 @@ FIELD_EMOJIS = {
     "CountryAndCity": "🏙️",
     "SubmittedBy": "👨‍💼",
     "ContactInformation": "📞",
+    "PaymentStatus": "💰",
+    "PaymentAmount": "💸",
+    "PaymentDate": "📅",
 }
 
 
@@ -97,11 +104,18 @@ def merge_participant_data(
     return merged
 
 
-def format_participant_block(data: Dict) -> str:
-    gender_key = data.get("Gender") or ""
-    size_key = data.get("Size") or ""
-    role_key = data.get("Role") or ""
-    dept_key = data.get("Department") or ""
+def format_participant_block(data: Union[Participant, Dict]) -> str:
+    # Конвертируем Participant в Dict для единообразной работы
+    if isinstance(data, Participant):
+        data_dict = asdict(data)
+    else:
+        data_dict = data
+
+    gender_key = data_dict.get("Gender") or ""
+    size_key = data_dict.get("Size") or ""
+    role_key = data_dict.get("Role") or ""
+    dept_key = data_dict.get("Department") or ""
+    payment_status_key = data_dict.get("PaymentStatus") or "Unpaid"
 
     gender = GENDER_DISPLAY.get(gender_key, "Не указано")
     size = SIZE_DISPLAY.get(size_key, "Не указано")
@@ -109,11 +123,11 @@ def format_participant_block(data: Dict) -> str:
     department = DEPARTMENT_DISPLAY.get(dept_key, dept_key or "Не указано")
 
     text = (
-        f"Имя (рус): {data.get('FullNameRU') or 'Не указано'}\n"
-        f"Имя (англ): {data.get('FullNameEN') or 'Не указано'}\n"
+        f"Имя (рус): {data_dict.get('FullNameRU') or 'Не указано'}\n"
+        f"Имя (англ): {data_dict.get('FullNameEN') or 'Не указано'}\n"
         f"Пол: {gender}\n"
         f"Размер: {size}\n"
-        f"Церковь: {data.get('Church') or 'Не указано'}\n"
+        f"Церковь: {data_dict.get('Church') or 'Не указано'}\n"
         f"Роль: {role}"
     )
 
@@ -121,10 +135,27 @@ def format_participant_block(data: Dict) -> str:
         text += f"\nДепартамент: {department}"
 
     text += (
-        f"\nГород: {data.get('CountryAndCity') or 'Не указано'}\n"
-        f"Кто подал: {data.get('SubmittedBy') or 'Не указано'}\n"
-        f"Контакты: {data.get('ContactInformation') or 'Не указано'}"
+        f"\nГород: {data_dict.get('CountryAndCity') or 'Не указано'}\n"
+        f"Кто подал: {data_dict.get('SubmittedBy') or 'Не указано'}\n"
+        f"Контакты: {data_dict.get('ContactInformation') or 'Не указано'}"
     )
+
+    # Add payment information в ожидаемом тестами формате
+    payment_amount = data_dict.get('PaymentAmount', 0)
+    payment_date = data_dict.get('PaymentDate', "")
+    
+    # Статус оплаты (всегда показываем)
+    payment_status_display = PAYMENT_STATUS_DISPLAY.get(payment_status_key, payment_status_key)
+    text += f"\n💰 Статус оплаты: {payment_status_display}"
+    
+    # Сумма оплаты (если больше 0)
+    if payment_amount and payment_amount > 0:
+        text += f"\n💳 Сумма оплаты: {payment_amount} ₪"
+    
+    # Дата оплаты (если есть)
+    if payment_date:
+        text += f"\n📅 Дата оплаты: {payment_date}"
+
     return text
 
 
@@ -770,6 +801,19 @@ class ParticipantService:
         if p.Role == "TEAM" and p.Department:
             text += f" ({p.Department})"
 
+        # Добавляем информацию об оплате
+        if hasattr(p, 'PaymentStatus') and p.PaymentStatus:
+            if p.PaymentStatus == "Paid" and hasattr(p, 'PaymentAmount') and p.PaymentAmount:
+                text += f"\n   • 💰 Оплачено: {p.PaymentAmount} ₪"
+            elif p.PaymentStatus == "Partial" and hasattr(p, 'PaymentAmount') and p.PaymentAmount:
+                text += f"\n   • 🔄 Частично: {p.PaymentAmount} ₪"
+            elif p.PaymentStatus == "Refunded":
+                text += f"\n   • 🔙 Возврат оплаты"
+            else:
+                text += f"\n   • ❌ Не оплачено"
+        else:
+            text += f"\n   • ❌ Не оплачено"
+
         if result.match_field == "name_en" and p.FullNameEN:
             text += f"\n   • English: {p.FullNameEN}"
 
@@ -777,3 +821,140 @@ class ParticipantService:
             text += f"\n   • Совпадение: {int(result.confidence * 100)}%"
 
         return text
+
+    def process_payment(self, participant_id: Union[int, str], amount: int, payment_date: Optional[str] = None, user_id: Optional[int] = None) -> bool:
+        """
+        ✅ НОВЫЙ МЕТОД: обработка платежа участника.
+
+        Args:
+            participant_id: ID участника
+            amount: Сумма в шейкелях (целое число)
+            payment_date: Дата оплаты в ISO формате (опционально)
+            user_id: ID пользователя для логирования
+
+        Returns:
+            bool: True если операция успешна
+
+        Raises:
+            ParticipantNotFoundError: Если участник не найден
+            ValidationError: При неверных данных
+        """
+        from datetime import date
+        
+        start = time.time()
+        
+        # Валидация суммы
+        if not isinstance(amount, int) or amount <= 0:
+            raise ValidationError("Сумма оплаты должна быть положительным целым числом")
+
+        # Если дата не передана, используем текущую
+        if payment_date is None:
+            payment_date = date.today().isoformat()
+
+        # Определяем статус на основе суммы
+        status = "Paid"  # По умолчанию считаем полной оплатой
+        
+        success = self.repository.update_payment(participant_id, status, amount, payment_date)
+        
+        duration = time.time() - start
+        self.performance_logger.info(
+            json.dumps({
+                "operation": "process_payment",
+                "duration": duration,
+                "user_id": user_id,
+                "participant_id": participant_id,
+                "amount": amount,
+                "status": status
+            }, ensure_ascii=False)
+        )
+        
+        # Логируем изменение платежа
+        self._log_participant_change(
+            user_id, 
+            "payment_update", 
+            {"PaymentStatus": status, "PaymentAmount": amount, "PaymentDate": payment_date},
+            participant_id=participant_id
+        )
+        
+        return success
+
+    def get_payment_statistics(self) -> Dict:
+        """
+        ✅ НОВЫЙ МЕТОД: получение статистики по платежам.
+
+        Returns:
+            Dict: Статистика платежей
+        """
+        start = time.time()
+        stats = self.repository.get_payment_summary()
+        duration = time.time() - start
+        
+        self.performance_logger.info(
+            json.dumps({
+                "operation": "get_payment_statistics",
+                "duration": duration,
+            }, ensure_ascii=False)
+        )
+        
+        return stats
+
+    def validate_payment_data(self, payment_info: Dict) -> Tuple[bool, str]:
+        """
+        ✅ НОВЫЙ МЕТОД: валидация данных платежа.
+
+        Args:
+            payment_info: Данные платежа (amount/PaymentAmount, status/PaymentStatus, date/PaymentDate)
+
+        Returns:
+            Tuple[bool, str]: (is_valid, error_message)
+        """
+        # Поддерживаем оба формата ключей: 'amount/status/date' и 'PaymentAmount/PaymentStatus/PaymentDate'
+        raw_amount = payment_info.get("amount", payment_info.get("PaymentAmount"))
+        raw_status = payment_info.get("status", payment_info.get("PaymentStatus", "Paid"))
+        raw_date = payment_info.get("date", payment_info.get("PaymentDate", ""))
+        
+        amount = raw_amount
+        status = raw_status
+        date = raw_date
+
+        # Валидация суммы
+        if not isinstance(amount, int):
+            try:
+                amount = int(amount)
+            except (ValueError, TypeError):
+                return False, "Сумма должна быть целым числом"
+
+        if amount <= 0:
+            return False, "Сумма должна быть больше нуля"
+
+        # Валидация статуса
+        valid_statuses = ['Unpaid', 'Paid', 'Partial', 'Refunded']
+        if status not in valid_statuses:
+            return False, f"Неверный статус оплаты. Допустимые: {', '.join(valid_statuses)}"
+
+        # Валидация даты (базовая проверка)
+        if date and len(date) < 10:  # Минимум YYYY-MM-DD
+            return False, "Неверный формат даты. Используйте YYYY-MM-DD"
+
+        return True, ""
+
+    def get_unpaid_participants(self) -> List[Participant]:
+        """
+        ✅ НОВЫЙ МЕТОД: получение неоплаченных участников.
+
+        Returns:
+            List[Participant]: Список неоплаченных участников
+        """
+        start = time.time()
+        unpaid = self.repository.get_unpaid_participants()
+        duration = time.time() - start
+        
+        self.performance_logger.info(
+            json.dumps({
+                "operation": "get_unpaid_participants",
+                "duration": duration,
+                "count": len(unpaid)
+            }, ensure_ascii=False)
+        )
+        
+        return unpaid

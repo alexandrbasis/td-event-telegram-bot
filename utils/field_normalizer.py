@@ -10,6 +10,7 @@ class FieldType(Enum):
     ROLE = "role"
     SIZE = "size"
     DEPARTMENT = "department"
+    PAYMENT_STATUS = "payment_status"
 
 
 @dataclass
@@ -180,6 +181,30 @@ class FieldNormalizer:
             },
         }
 
+        # === PAYMENT STATUS MAPPINGS ===
+        self.PAYMENT_STATUS_MAPPINGS = {
+            "Unpaid": {
+                "UNPAID", "НЕ ОПЛАЧЕНО", "НЕ ОПЛАТИЛ", "НЕ ЗАПЛАТИЛ", "НЕОПЛАЧЕНО",
+                "НЕТ ОПЛАТЫ", "БЕЗ ОПЛАТЫ", "НЕ ПЛАТИЛ", "НЕОПЛАЧЕННЫЙ",
+                "NOT PAID", "NO PAYMENT", "UNPAID"
+            },
+            "Paid": {
+                "PAID", "ОПЛАЧЕНО", "ОПЛАТИЛ", "ЗАПЛАТИЛ", "ОПЛАЧЕНО",
+                "ЕСТЬ ОПЛАТА", "С ОПЛАТОЙ", "ПЛАТИЛ", "ОПЛАЧЕННЫЙ",
+                "PAID", "PAYMENT", "ОПЛАТА", "ДЕНЬГИ", "ВНЕС"
+            },
+            "Partial": {
+                "PARTIAL", "ЧАСТИЧНО", "ЧАСТИЧНАЯ ОПЛАТА", "ЧАСТИЧНО ОПЛАЧЕНО",
+                "НЕПОЛНАЯ ОПЛАТА", "НЕ ВСЕ", "ЧАСТЬ", "ЧАСТИЧНО ПЛАТИЛ",
+                "PARTIALLY PAID", "PARTIAL PAYMENT"
+            },
+            "Refunded": {
+                "REFUNDED", "ВОЗВРАТ", "ВЕРНУЛИ", "ВОЗВРАЩЕНО", "РЕФАНД",
+                "ВОЗВРАТ ДЕНЕГ", "ВЕРНУЛИ ДЕНЬГИ", "ОТМЕНИЛИ ОПЛАТУ",
+                "REFUND", "RETURNED", "CANCELLED"
+            }
+        }
+
         self._create_reverse_indexes()
 
     def _create_reverse_indexes(self) -> None:
@@ -189,6 +214,7 @@ class FieldNormalizer:
         self._role_index: dict[str, str] = {}
         self._size_index: dict[str, str] = {}
         self._department_index: dict[str, str] = {}
+        self._payment_status_index: dict[str, str] = {}
 
         for canonical, synonyms in self.GENDER_MAPPINGS.items():
             for synonym in synonyms:
@@ -205,6 +231,10 @@ class FieldNormalizer:
         for canonical, synonyms in self.DEPARTMENT_MAPPINGS.items():
             for synonym in synonyms:
                 self._department_index[synonym.upper()] = canonical
+
+        for canonical, synonyms in self.PAYMENT_STATUS_MAPPINGS.items():
+            for synonym in synonyms:
+                self._payment_status_index[synonym.upper()] = canonical
 
     def normalize_gender(self, value: str) -> Optional[NormalizationResult]:
         """Normalize participant gender."""
@@ -304,6 +334,29 @@ class FieldNormalizer:
         """Return all canonical departments."""
         return set(self.DEPARTMENT_MAPPINGS.keys())
 
+    def normalize_payment_status(self, value: str) -> Optional[NormalizationResult]:
+        """Normalize payment status."""
+        if not value or not value.strip():
+            return None
+
+        clean_value = value.strip().upper()
+        canonical = self._payment_status_index.get(clean_value)
+
+        if canonical:
+            confidence = 1.0 if clean_value == canonical else 0.9
+            return NormalizationResult(
+                field_type=FieldType.PAYMENT_STATUS,
+                original_value=value,
+                normalized_value=canonical,
+                confidence=confidence,
+            )
+
+        return None
+
+    def get_payment_status_options(self) -> Set[str]:
+        """Return all canonical payment status values."""
+        return set(self.PAYMENT_STATUS_MAPPINGS.keys())
+
 
 field_normalizer = FieldNormalizer()
 
@@ -329,4 +382,10 @@ def normalize_size(value: str) -> Optional[str]:
 def normalize_department(value: str) -> Optional[str]:
     """Convenience function for department normalization."""
     result = field_normalizer.normalize_department(value)
+    return result.normalized_value if result else None
+
+
+def normalize_payment_status(value: str) -> Optional[str]:
+    """Convenience function for payment status normalization."""
+    result = field_normalizer.normalize_payment_status(value)
     return result.normalized_value if result else None

@@ -1,3 +1,4 @@
+import json
 import logging
 import re
 import time
@@ -12,6 +13,7 @@ from typing import Dict, List, Optional
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import (
     Application,
+    ApplicationHandlerStop,
     CallbackQueryHandler,
     CommandHandler,
     ContextTypes,
@@ -88,6 +90,8 @@ from states import (
     SELECTING_PARTICIPANT,
     CHOOSING_ACTION,
     EXECUTING_ACTION,
+    ENTERING_PAYMENT_AMOUNT,
+    CONFIRMING_PAYMENT,
 )
 
 BOT_VERSION = "0.1"
@@ -123,7 +127,7 @@ def smart_cleanup_on_error(func):
                 user_id,
                 e,
                 {
-                    "user_data": dict(context.user_data),
+                    "user_data": _safe_serialize_user_data(dict(context.user_data)),
                     "last_actions": context.user_data.get("action_history", []),
                     "timestamp": timestamp,
                     "bot_version": BOT_VERSION,
@@ -177,7 +181,7 @@ def smart_cleanup_on_error(func):
                 user_id,
                 e,
                 {
-                    "user_data": dict(context.user_data),
+                    "user_data": _safe_serialize_user_data(dict(context.user_data)),
                     "last_actions": context.user_data.get("action_history", []),
                     "timestamp": timestamp,
                     "bot_version": BOT_VERSION,
@@ -210,7 +214,7 @@ def smart_cleanup_on_error(func):
                     user_id,
                     e,
                     {
-                        "user_data": dict(context.user_data),
+                        "user_data": _safe_serialize_user_data(dict(context.user_data)),
                         "last_actions": context.user_data.get("action_history", []),
                         "timestamp": timestamp,
                         "bot_version": BOT_VERSION,
@@ -230,7 +234,7 @@ def smart_cleanup_on_error(func):
                 user_id,
                 e,
                 {
-                    "user_data": dict(context.user_data),
+                    "user_data": _safe_serialize_user_data(dict(context.user_data)),
                     "last_actions": context.user_data.get("action_history", []),
                     "timestamp": timestamp,
                     "bot_version": BOT_VERSION,
@@ -305,7 +309,7 @@ def smart_cleanup_on_error(func):
                 user_id,
                 e,
                 {
-                    "user_data": dict(context.user_data),
+                    "user_data": _safe_serialize_user_data(dict(context.user_data)),
                     "last_actions": context.user_data.get("action_history", []),
                     "timestamp": timestamp,
                     "bot_version": BOT_VERSION,
@@ -621,6 +625,35 @@ def _log_session_end(context: ContextTypes.DEFAULT_TYPE, user_id: int) -> None:
         user_logger.log_user_action(user_id, "session_end", {"duration": duration})
 
 
+def _safe_serialize_user_data(user_data: dict) -> dict:
+    """Safely serialize user_data for logging, handling non-JSON-serializable objects."""
+    safe_data = {}
+    for key, value in user_data.items():
+        try:
+            # Try to serialize each value to check if it's JSON-safe
+            json.dumps(value, ensure_ascii=False)
+            safe_data[key] = value
+        except (TypeError, ValueError):
+            # Handle special cases for non-serializable objects
+            if key == "search_results" and isinstance(value, list):
+                # Convert SearchResult objects to basic info
+                safe_data[key] = [
+                    {
+                        "participant_id": result.participant.id if hasattr(result, 'participant') else str(result),
+                        "confidence": getattr(result, 'confidence', 'unknown'),
+                        "match_field": getattr(result, 'match_field', 'unknown')
+                    } 
+                    for result in value
+                ]
+            elif hasattr(value, '__dict__'):
+                # For other objects with attributes, just store the type
+                safe_data[key] = f"<{type(value).__name__} object>"
+            else:
+                # For other non-serializable values, store their string representation
+                safe_data[key] = str(value)
+    return safe_data
+
+
 def log_state_transitions(func):
     """Decorator to log state transitions for conversation handlers."""
 
@@ -655,7 +688,7 @@ def log_state_transitions(func):
                 user_id,
                 e,
                 {
-                    "user_data": dict(context.user_data),
+                    "user_data": _safe_serialize_user_data(dict(context.user_data)),
                     "last_actions": context.user_data.get("action_history", []),
                     "input": data,
                     "timestamp": datetime.utcnow().isoformat(),
@@ -1249,7 +1282,7 @@ async def handle_search_callback(
         logger.warning(
             f"Found existing user_data during search start: {list(context.user_data.keys())}"
         )
-        context.user_data.clear()
+        # Не очищаем user_data, чтобы не нарушить состояние ConversationHandler
 
     user_logger.log_user_action(user_id, "search_callback_triggered", {})
 
@@ -1340,7 +1373,14 @@ async def handle_search_input(
     context.user_data["search_results"] = search_results
     context.user_data["current_state"] = SELECTING_PARTICIPANT
 
-    return SELECTING_PARTICIPANT
+    # ИСПРАВЛЕНИЕ: Добавляем подробное логирование для отладки состояний
+    logger.info(f"Search completed for user {user_id}. Results: {len(search_results)}. "
+                f"Setting state to SELECTING_PARTICIPANT ({SELECTING_PARTICIPANT})")
+    logger.info(f"User {user_id} context before ApplicationHandlerStop: {context.user_data}")
+
+    # Блокируем дальнейшую обработку заглушкой handle_message
+    # ИСПРАВЛЕНИЕ: Теперь handle_message в той же группе (0), поэтому ApplicationHandlerStop будет работать
+    raise ApplicationHandlerStop(SELECTING_PARTICIPANT)
 
 
 @smart_cleanup_on_error
@@ -1352,11 +1392,18 @@ async def handle_participant_selection(
     query = update.callback_query
     await query.answer()
 
+    # ИСПРАВЛЕНИЕ: Добавляем подробное логирование для отладки
+    user_id = update.effective_user.id
+    logger.info(f"handle_participant_selection called for user {user_id}")
+    logger.info(f"Callback data: {query.data}")
+    logger.info(f"User {user_id} context: {context.user_data}")
+
     try:
         participant_id = int(query.data.split("_")[-1])
     except ValueError:
         participant_id = query.data.split("_")[-1]
-    user_id = update.effective_user.id
+    
+    logger.info(f"Parsed participant_id: {participant_id}")
 
     search_results: List[SearchResult] = context.user_data.get("search_results", [])
     selected_participant: Optional[Participant] = None
@@ -1394,6 +1441,11 @@ async def handle_participant_selection(
         return SEARCHING_PARTICIPANTS
 
     context.user_data["current_state"] = CHOOSING_ACTION
+    
+    # ИСПРАВЛЕНИЕ: Добавляем логирование успешного завершения
+    logger.info(f"handle_participant_selection completed successfully for user {user_id}. "
+                f"Transitioning to CHOOSING_ACTION ({CHOOSING_ACTION})")
+    
     return CHOOSING_ACTION
 
 
@@ -1426,6 +1478,23 @@ async def show_participant_details_and_actions(
         details_text += f"👨‍💼 **Кто подал:** {participant.SubmittedBy}\n"
     if participant.ContactInformation:
         details_text += f"📞 **Контакты:** {participant.ContactInformation}\n"
+    
+    # Добавляем информацию об оплате
+    if hasattr(participant, 'PaymentStatus') and participant.PaymentStatus:
+        if participant.PaymentStatus == "Paid" and hasattr(participant, 'PaymentAmount') and participant.PaymentAmount:
+            details_text += f"💰 **Оплата:** {participant.PaymentAmount} ₪"
+            if hasattr(participant, 'PaymentDate') and participant.PaymentDate:
+                details_text += f" (от {participant.PaymentDate})"
+            details_text += "\n"
+        elif participant.PaymentStatus == "Partial" and hasattr(participant, 'PaymentAmount') and participant.PaymentAmount:
+            details_text += f"🔄 **Частичная оплата:** {participant.PaymentAmount} ₪\n"
+        elif participant.PaymentStatus == "Refunded":
+            details_text += f"🔙 **Возврат оплаты**\n"
+        else:
+            details_text += f"❌ **Не оплачено**\n"
+    else:
+        details_text += f"❌ **Не оплачено**\n"
+    
     details_text += (
         f"\n🕐 **Создан:** {getattr(participant, 'created_at', 'Неизвестно')}"
     )
@@ -1558,6 +1627,25 @@ async def handle_action_selection(
         cleanup_user_data_safe(context, user_id)
         return ConversationHandler.END
 
+    if action == "action_payment":
+        # Сохраняем участника для обработки оплаты
+        context.user_data["payment_participant"] = selected_participant
+        
+        await query.message.reply_text(
+            f"💰 **Внесение оплаты**\n\n"
+            f"👤 Участник: **{participant_name}**\n\n"
+            f"Введите сумму оплаты в шейкелях (только целое число):",
+            parse_mode="Markdown"
+        )
+        
+        user_logger.log_user_action(
+            user_id,
+            "payment_entry_started",
+            {"participant_id": participant_id, "participant_name": participant_name}
+        )
+        
+        return ENTERING_PAYMENT_AMOUNT
+
     if action == "action_cancel":
         await show_participant_details_and_actions(
             update, context, selected_participant
@@ -1614,16 +1702,28 @@ def get_participant_actions_keyboard(
                     InlineKeyboardButton("🗑️ Удалить", callback_data="action_delete"),
                 ],
                 [
+                    InlineKeyboardButton(
+                        "💰 Внести оплату", callback_data="action_payment"
+                    ),
+                ],
+                [
                     InlineKeyboardButton("🔍 Найти еще", callback_data="main_search"),
                     InlineKeyboardButton("🏠 Главное меню", callback_data="main_menu"),
                 ],
             ]
         )
     else:
-        buttons.append(
+        buttons.extend(
             [
-                InlineKeyboardButton("🔍 Найти еще", callback_data="main_search"),
-                InlineKeyboardButton("🏠 Главное меню", callback_data="main_menu"),
+                [
+                    InlineKeyboardButton(
+                        "💰 Внести оплату", callback_data="action_payment"
+                    ),
+                ],
+                [
+                    InlineKeyboardButton("🔍 Найти еще", callback_data="main_search"),
+                    InlineKeyboardButton("🏠 Главное меню", callback_data="main_menu"),
+                ],
             ]
         )
 
@@ -1742,10 +1842,12 @@ async def handle_partial_data(
             context.user_data["parsed_participant"] = participant_data
             await show_confirmation(update, context, participant_data)
             context.user_data["current_state"] = CONFIRMING_DATA
-            return CONFIRMING_DATA
+            # Блокируем дальнейшую обработку заглушкой handle_message
+            raise ApplicationHandlerStop(CONFIRMING_DATA)
         await show_interactive_missing_field(update, context, participant_data)
         context.user_data["current_state"] = FILLING_MISSING_FIELDS
-        return FILLING_MISSING_FIELDS
+        # Блокируем дальнейшую обработку заглушкой handle_message
+        raise ApplicationHandlerStop(FILLING_MISSING_FIELDS)
 
     # 1. Check if user pasted a full template (highest priority)
     if is_template_format(text):
@@ -1790,7 +1892,8 @@ async def handle_partial_data(
                 f"ℹ️ Участник с именем '{newly_identified_name}' уже существует. Переключаюсь в режим редактирования."
             )
             await show_confirmation(update, context, existing_dict)
-            return CONFIRMING_DATA
+            # Блокируем дальнейшую обработку заглушкой handle_message
+            raise ApplicationHandlerStop(CONFIRMING_DATA)
 
     context.user_data["add_flow_data"] = participant_data
 
@@ -1807,11 +1910,13 @@ async def handle_partial_data(
 
         await show_confirmation(update, context, participant_data)
         context.user_data["current_state"] = CONFIRMING_DATA
-        return CONFIRMING_DATA
+        # Блокируем дальнейшую обработку заглушкой handle_message
+        raise ApplicationHandlerStop(CONFIRMING_DATA)
     else:
         await show_interactive_missing_field(update, context, participant_data)
         context.user_data["current_state"] = FILLING_MISSING_FIELDS
-        return FILLING_MISSING_FIELDS
+        # Блокируем дальнейшую обработку заглушкой handle_message
+        raise ApplicationHandlerStop(FILLING_MISSING_FIELDS)
 
 
 @require_role("coordinator")
@@ -1837,11 +1942,13 @@ async def handle_missing_field_input(
         context.user_data["parsed_participant"] = participant_data
         await show_confirmation(update, context, participant_data)
         context.user_data["current_state"] = CONFIRMING_DATA
-        return CONFIRMING_DATA
+        # Блокируем дальнейшую обработку заглушкой handle_message
+        raise ApplicationHandlerStop(CONFIRMING_DATA)
 
     await show_interactive_missing_field(update, context, participant_data)
     context.user_data["current_state"] = FILLING_MISSING_FIELDS
-    return FILLING_MISSING_FIELDS
+    # Блокируем дальнейшую обработку заглушкой handle_message
+    raise ApplicationHandlerStop(FILLING_MISSING_FIELDS)
 
 
 # Команда /edit
@@ -1893,6 +2000,115 @@ async def delete_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 @require_role("coordinator")
+async def payment_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """
+    Команда /payment для координаторов - быстрый доступ к внесению оплаты.
+    
+    Использование: 
+    /payment - поиск участника для внесения оплаты
+    /payment [имя] - прямой поиск участника по имени
+    """
+    user_id = update.effective_user.id
+    if detect_interrupted_session(update, context):
+        await handle_session_recovery(update, context)
+        return
+
+    user_logger.log_user_action(user_id, "command_start", {"command": "/payment"})
+    _record_action(context, "/payment:start")
+
+    # Проверяем, есть ли аргументы команды
+    command_args = update.message.text.split(" ", 1)
+    
+    if len(command_args) > 1:
+        # Есть имя для поиска - выполняем поиск сразу
+        search_query = command_args[1].strip()
+        
+        if len(search_query) < 2:
+            await update.message.reply_text(
+                "❌ Слишком короткий запрос. Введите минимум 2 символа.\n\n"
+                "**Использование:**\n"
+                "/payment - поиск участника\n"
+                "/payment [имя] - поиск по имени",
+                parse_mode="Markdown"
+            )
+            return
+
+        try:
+            search_results = participant_service.search_participants(
+                search_query, max_results=5
+            )
+        except Exception as e:
+            logger.error(f"Payment search error for query '{search_query}': {e}")
+            await update.message.reply_text(
+                "❌ **Ошибка поиска**\n\n"
+                "Произошла техническая ошибка. Попробуйте позже.",
+                parse_mode="Markdown"
+            )
+            return
+
+        if not search_results:
+            await update.message.reply_text(
+                f"❌ **Участники не найдены**\n\n"
+                f"Поиск по запросу: *{search_query}*\n"
+                f"Попробуйте изменить запрос или проверить правильность написания.",
+                parse_mode="Markdown"
+            )
+            return
+
+        if len(search_results) == 1:
+            # Найден один участник - сразу переходим к оплате
+            participant = search_results[0].participant
+            context.user_data["payment_participant"] = participant
+            
+            await update.message.reply_text(
+                f"💰 **Внесение оплаты**\n\n"
+                f"👤 Участник: **{participant.FullNameRU}**\n"
+                f"🆔 ID: {participant.id}\n\n"
+                f"Введите сумму оплаты в шейкелях (только целое число):",
+                parse_mode="Markdown"
+            )
+            
+            user_logger.log_user_action(
+                user_id,
+                "payment_direct_entry",
+                {"participant_id": participant.id, "participant_name": participant.FullNameRU}
+            )
+            
+            return ENTERING_PAYMENT_AMOUNT
+        else:
+            # Найдено несколько участников - показываем для выбора
+            results_text = f"💰 **Выберите участника для внесения оплаты**\n\n"
+            results_text += f"🔍 Найдено участников: {len(search_results)}\n\n"
+            
+            for result in search_results:
+                results_text += participant_service.format_search_result(result) + "\n\n"
+            
+            results_text += "👆 Выберите участника:"
+            
+            keyboard = get_search_results_keyboard(search_results)
+            await update.message.reply_text(
+                results_text, parse_mode="Markdown", reply_markup=keyboard
+            )
+            
+            context.user_data["search_results"] = search_results
+            context.user_data["payment_mode"] = True  # Указываем, что это режим оплаты
+            
+            return SELECTING_PARTICIPANT
+    else:
+        # Нет аргументов - показываем инструкции и начинаем поиск
+        await update.message.reply_text(
+            "💰 **Внесение оплаты участника**\n\n"
+            "Введите имя участника для поиска:",
+            parse_mode="Markdown"
+        )
+        
+        user_logger.log_user_action(user_id, "payment_search_started", {})
+        return SEARCHING_PARTICIPANTS
+
+    user_logger.log_user_action(user_id, "command_end", {"command": "/payment"})
+
+
+@require_role("coordinator")
 async def edit_field_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """
     ✅ НОВАЯ КОМАНДА: Демонстрация частичного обновления полей.
@@ -1903,6 +2119,7 @@ async def edit_field_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
         await handle_session_recovery(update, context)
         return
 
+    user_id = update.effective_user.id
     try:
         parts = update.message.text.split(" ", 3)
         if len(parts) < 4:
@@ -2001,8 +2218,19 @@ async def list_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         role_emoji = "👤" if p.Role == "CANDIDATE" else "👨‍💼"
         department = f" ({p.Department})" if p.Role == "TEAM" and p.Department else ""
 
+        # Определяем статус оплаты
+        payment_info = "❌ Не оплачено"
+        if hasattr(p, 'PaymentStatus') and p.PaymentStatus:
+            if p.PaymentStatus == "Paid" and hasattr(p, 'PaymentAmount') and p.PaymentAmount:
+                payment_info = f"💰 {p.PaymentAmount} ₪"
+            elif p.PaymentStatus == "Partial" and hasattr(p, 'PaymentAmount') and p.PaymentAmount:
+                payment_info = f"🔄 {p.PaymentAmount} ₪"
+            elif p.PaymentStatus == "Refunded":
+                payment_info = "🔙 Возврат"
+
         message += f"{role_emoji} **{p.FullNameRU}**\n"
         message += f"   • Роль: {p.Role}{department}\n"
+        message += f"   • Оплата: {payment_info}\n"
         message += f"   • ID: {p.id}\n\n"
 
     await _send_response_with_menu_button(update, message)
@@ -2089,6 +2317,8 @@ async def process_participant_confirmation(
 ) -> int:
     """Обрабатывает ввод пользователя на этапе подтверждения."""
 
+    user_id = update.effective_user.id
+    
     # Копия текста подтверждения или его части может приходить обратно от пользователя
     is_block = "Имя (рус):" in text and "Пол:" in text
     if text.startswith("🔍") or "Вот что я понял" in text or is_block:
@@ -2825,6 +3055,170 @@ async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE):
         )
 
 
+# Payment processing functions
+def validate_payment_amount(text: str) -> tuple[bool, int, str]:
+    """
+    Валидация суммы оплаты
+    Returns: (is_valid, amount, error_message)
+    """
+    try:
+        # Удаляем пробелы и проверяем, что это число
+        amount = int(text.strip())
+        if amount <= 0:
+            return False, 0, "⚠️ Сумма должна быть больше нуля"
+        return True, amount, ""
+    except ValueError:
+        return False, 0, "⚠️ Пожалуйста, введите целое число"
+
+
+async def handle_payment_amount_input(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> int:
+    """Обработка ввода суммы оплаты."""
+    user_id = update.effective_user.id
+    text = update.message.text.strip()
+    
+    # Валидация суммы
+    is_valid, amount, error_message = validate_payment_amount(text)
+    
+    if not is_valid:
+        await update.message.reply_text(
+            f"{error_message}\n\n"
+            f"Попробуйте еще раз. Введите целое число больше нуля:"
+        )
+        return ENTERING_PAYMENT_AMOUNT
+    
+    # Сохраняем сумму и переходим к подтверждению
+    context.user_data["payment_amount"] = amount
+    participant = context.user_data.get("payment_participant")
+    
+    if not participant:
+        await update.message.reply_text("❌ Ошибка: участник не найден. Начните заново.")
+        return ConversationHandler.END
+    
+    # Создаем клавиатуру подтверждения
+    confirm_keyboard = InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton("✅ Да", callback_data="confirm_payment"),
+            InlineKeyboardButton("❌ Нет", callback_data="cancel_payment"),
+        ]
+    ])
+    
+    await update.message.reply_text(
+        f"💰 **Подтверждение оплаты**\n\n"
+        f"👤 Участник: **{participant.FullNameRU}**\n"
+        f"💵 Сумма: **{amount} ₪** (шейкелей)\n\n"
+        f"Подтвердить внесение оплаты?",
+        parse_mode="Markdown",
+        reply_markup=confirm_keyboard
+    )
+    
+    user_logger.log_user_action(
+        user_id,
+        "payment_amount_entered",
+        {"participant_id": participant.id, "amount": amount}
+    )
+    
+    # Блокируем дальнейшую обработку заглушкой handle_message
+    raise ApplicationHandlerStop(CONFIRMING_PAYMENT)
+
+
+async def handle_payment_confirmation(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> int:
+    """Обработка подтверждения оплаты."""
+    query = update.callback_query
+    await query.answer()
+    
+    user_id = update.effective_user.id
+    action = query.data
+    
+    participant = context.user_data.get("payment_participant")
+    amount = context.user_data.get("payment_amount")
+    
+    if not participant or not amount:
+        await query.message.reply_text("❌ Ошибка: данные оплаты не найдены.")
+        return ConversationHandler.END
+    
+    if action == "confirm_payment":
+        try:
+            from datetime import datetime, date
+            
+            # Обрабатываем платеж через сервис (передаем ISO дату)
+            payment_date = date.today().isoformat()
+            success = participant_service.process_payment(
+                participant_id=participant.id,
+                amount=amount,
+                payment_date=payment_date,
+                user_id=user_id
+            )
+            
+            if success:
+                # Создаем клавиатуру для дальнейших действий
+                success_keyboard = InlineKeyboardMarkup([
+                    [
+                        InlineKeyboardButton("🔍 Новый поиск", callback_data="main_search"),
+                        InlineKeyboardButton("🏠 Главное меню", callback_data="main_menu"),
+                    ]
+                ])
+                
+                current_date = datetime.now().strftime("%d.%m.%Y")
+                
+                await query.message.reply_text(
+                    f"✅ **Оплата внесена!**\n\n"
+                    f"💰 Сумма: **{amount} ₪**\n"
+                    f"📅 Дата: **{current_date}**\n"
+                    f"👤 Участник: **{participant.FullNameRU}**",
+                    parse_mode="Markdown",
+                    reply_markup=success_keyboard
+                )
+                
+                user_logger.log_user_action(
+                    user_id,
+                    "payment_completed",
+                    {
+                        "participant_id": participant.id,
+                        "amount": amount,
+                        "participant_name": participant.FullNameRU
+                    }
+                )
+            else:
+                await query.message.reply_text(
+                    f"❌ **Ошибка при внесении оплаты**\n\n"
+                    f"Попробуйте позже или обратитесь к администратору."
+                )
+        
+        except Exception as e:
+            logger.error(f"Error processing payment for participant {participant.id}: {e}")
+            await query.message.reply_text(
+                f"❌ **Ошибка при обработке платежа**\n\n"
+                f"Произошла техническая ошибка. Попробуйте позже."
+            )
+        
+        # Очищаем данные оплаты
+        context.user_data.pop("payment_participant", None)
+        context.user_data.pop("payment_amount", None)
+        return ConversationHandler.END
+    
+    elif action == "cancel_payment":
+        # Возвращаемся к просмотру участника
+        await show_participant_details_and_actions(update, context, participant)
+        
+        # Очищаем данные оплаты
+        context.user_data.pop("payment_participant", None)
+        context.user_data.pop("payment_amount", None)
+        
+        user_logger.log_user_action(
+            user_id,
+            "payment_cancelled",
+            {"participant_id": participant.id}
+        )
+        
+        return CHOOSING_ACTION
+    
+    return CONFIRMING_PAYMENT
+
+
 # Factory for participant repositories
 def create_participant_repository():
     """Factory function to create the appropriate participant repository."""
@@ -2870,6 +3264,18 @@ def main():
     participant_repository = create_participant_repository()
     participant_service = ParticipantService(repository=participant_repository)
 
+    # Runtime check: verify python-telegram-bot version is in 22.x range
+    try:
+        import telegram  # type: ignore
+        ptb_version = getattr(telegram, "__version__", "")
+        if not (isinstance(ptb_version, str) and ptb_version.startswith("22.")):
+            logger.warning(
+                "python-telegram-bot version '%s' is outside supported 22.x range; please pin to '>=22,<23'",
+                ptb_version or "(unknown)",
+            )
+    except Exception as e:
+        logger.warning("Failed to verify python-telegram-bot version: %s", e)
+
     # Создаем приложение
     application = Application.builder().token(BOT_TOKEN).build()
 
@@ -2882,6 +3288,7 @@ def main():
     search_conv = ConversationHandler(
         entry_points=[
             CommandHandler("search", search_command),
+            CommandHandler("payment", payment_command),
             CallbackQueryHandler(handle_search_callback, pattern="^main_search$"),
         ],
         states={
@@ -2904,15 +3311,21 @@ def main():
                     handle_action_selection, pattern="^action_cancel$"
                 ),
             ],
+            ENTERING_PAYMENT_AMOUNT: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, handle_payment_amount_input)
+            ],
+            CONFIRMING_PAYMENT: [
+                CallbackQueryHandler(handle_payment_confirmation, pattern="^(confirm|cancel)_payment$"),
+            ],
         },
         fallbacks=[
             CommandHandler("cancel", cancel_command),
             CallbackQueryHandler(cancel_callback, pattern="^main_cancel$"),
             CallbackQueryHandler(handle_main_menu_callback, pattern="^main_menu$"),
-            CallbackQueryHandler(handle_main_menu_callback, pattern="^search_new$"),
+            # Removed dead pattern "search_new"; real callback data is "main_search"
         ],
         per_chat=True,
-        per_message=True,
+        per_message=False,
     )
 
     add_conv = ConversationHandler(
@@ -2967,7 +3380,7 @@ def main():
             CallbackQueryHandler(cancel_callback, pattern="^main_cancel$"),
         ],
         per_chat=True,
-        per_message=True,
+        per_message=False,
     )
     # ConversationHandler должен быть зарегистрирован первым
     application.add_handler(search_conv)
@@ -2984,6 +3397,7 @@ def main():
     application.add_handler(CommandHandler("edit", edit_command))
     application.add_handler(CommandHandler("edit_field", edit_field_command))
     application.add_handler(CommandHandler("delete", delete_command))
+    application.add_handler(CommandHandler("payment", payment_command))
     application.add_handler(CommandHandler("list", list_command))
     application.add_handler(CommandHandler("export", export_command))
     application.add_handler(CommandHandler("cancel", cancel_command))
@@ -2999,9 +3413,10 @@ def main():
         )
     )
 
-    # Обработчик текстовых сообщений
+    # Обработчик текстовых сообщений (fallback - только если ConversationHandler не обработал)
+    # ИСПРАВЛЕНИЕ: Перемещен в группу 0 для правильной работы с ApplicationHandlerStop
     application.add_handler(
-        MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message)
+        MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message), group=0
     )
 
     # Обработчик ошибок

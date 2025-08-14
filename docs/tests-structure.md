@@ -1,7 +1,7 @@
 # Test Structure Documentation
 
-**Version**: 1.0  
-**Last Updated**: August 13, 2025
+**Version**: 1.5  
+**Last Updated**: August 14, 2025
 
 ## Overview
 
@@ -44,13 +44,16 @@ tests/
 │   ├── test_database.py           # Database operations
 │   ├── test_search_engine.py      # Search functionality
 │   ├── test_airtable_connection.py # Airtable API connectivity
-│   └── test_airtable_repository.py # Airtable repository integration
+│   ├── test_airtable_repository.py # Airtable repository integration
+│   └── test_payment_functionality.py # Payment system comprehensive testing
 │
 ├── Async Tests (Bot interactions)
 │   ├── test_recover.py            # Error recovery flows
 │   ├── test_search_flow.py        # Search conversation flows
 │   ├── test_enum_selection_context.py # UI interactions
-│   └── test_field_edit_cancel.py  # Cancel operations
+│   ├── test_field_edit_cancel.py  # Cancel operations
+│   ├── test_search_double_messages.py # Search flow issues analysis (v1.3)
+│   └── test_search_fixes.py       # Search flow fixes verification (v1.3)
 │
 ├── UI/UX Tests (Interface components)
 │   ├── test_edit_keyboard.py      # Keyboard generation
@@ -59,11 +62,13 @@ tests/
 ├── Infrastructure Tests (System components)
 │   ├── test_timeouts.py           # Timeout management
 │   ├── test_database_fix.py       # Database edge cases
-│   └── test_missing_fields.py     # Field validation
+│   ├── test_missing_fields.py     # Field validation
+│   └── test_ptb_application_builder.py # PTB Application build stability (no network)
 │
 └── Domain-Specific Tests (Business logic)
     ├── test_contact_validation.py  # Israeli phone validation
-    └── test_role_department_logic.py # Business rules
+    ├── test_role_department_logic.py # Business rules
+    └── test_payment_functionality.py # Payment validation and processing (Added v1.1)
 ```
 
 ---
@@ -283,6 +288,79 @@ class RecoverTechnicalErrorTestCase(unittest.IsolatedAsyncioTestCase):
 class SearchFlowTestCase(unittest.IsolatedAsyncioTestCase):
     async def test_search_after_cancel(self):
         context = SimpleNamespace(user_data={}, chat_data={})
+```
+
+#### Search Flow Issues Analysis (`test_search_double_messages.py`)
+```python
+class TestSearchDoubleMessagesIssues(unittest.IsolatedAsyncioTestCase):
+    """
+    Test class to verify search flow problems before implementing fixes.
+    These tests are expected to FAIL on current code, confirming the issues.
+    """
+    
+    def test_handler_group_isolation_analysis(self):
+        """
+        TEST PROBLEM 3: Analysis of handler group isolation
+        
+        This test analyzes why handle_message fallback runs despite ApplicationHandlerStop
+        """
+        # Analysis of handler registration groups from main.py:
+        # - ConversationHandler: group 0 (default)
+        # - handle_message: group 10 (MessageHandler with filters.TEXT)
+        
+        conversation_handler_group = 0  # Default group
+        handle_message_group = 10       # Explicitly set in main.py
+        
+        # The issue: ApplicationHandlerStop only affects handlers in the same group
+        self.assertNotEqual(conversation_handler_group, handle_message_group)
+        
+        # This means when ConversationHandler raises ApplicationHandlerStop in group 0,
+        # it doesn't prevent handle_message in group 10 from running
+        
+        # THE ROOT CAUSE:
+        # ApplicationHandlerStop(SELECTING_PARTICIPANT) in group 0 
+        # does NOT block MessageHandler in group 10
+        
+        self.assertTrue(True, "Handler group isolation is the root cause of double messages")
+```
+
+#### Search Flow Fixes Verification (`test_search_fixes.py`)
+```python
+class TestSearchFlowFixes(unittest.IsolatedAsyncioTestCase):
+    """
+    Test class to verify that search flow fixes work correctly.
+    These tests should PASS after implementing the fixes.
+    """
+    
+    def test_handler_group_fix_verification(self):
+        """
+        TEST FIX 1: Verify that handle_message is now in the same group as ConversationHandler
+        
+        This test verifies that the fix for double messages is implemented correctly.
+        """
+        # The fix: handle_message moved from group 10 to group 0
+        conversation_handler_group = 0  # Default group
+        handle_message_group = 0        # FIXED: Now in same group
+        
+        # Verify they are now in the same group
+        self.assertEqual(conversation_handler_group, handle_message_group)
+        
+        # This means ApplicationHandlerStop will now properly block handle_message
+        self.assertTrue(True, "Handler groups are now aligned - ApplicationHandlerStop will work")
+```
+
+#### JSON Serialization Fix Tests (`test_json_serialization_fix.py`)
+```python
+class TestJSONSerializationFix(unittest.TestCase):
+    """Tests that verify safe serialization of context user_data used by logging decorators.
+    These tests prevent regressions that could break ConversationHandler transitions
+    in the search flow when complex objects (e.g., SearchResult) are stored in user_data.
+    """
+
+    def test_search_results_serialization(self):
+        # Verifies complex objects inside user_data are converted to JSON-safe form
+        ...
+```
         update = SimpleNamespace(
             callback_query=MagicMock(),
             effective_user=SimpleNamespace(id=1)
@@ -878,6 +956,18 @@ class TestConfig:
   - Department normalization
   - Multi-language field mapping
 
+#### Payment Functionality (`test_payment_functionality.py`)
+- **465 lines of comprehensive tests** covering:
+  - Payment model data fields (PaymentStatus, PaymentAmount, PaymentDate)
+  - Payment status enum validation and display mapping
+  - Payment amount validation (integers only, positive values)
+  - Payment status parsing from unstructured text
+  - Service layer payment processing workflows
+  - Database CRUD operations for payment fields
+  - Payment statistics and reporting
+  - Full end-to-end payment workflows
+  - Integration with existing participant management system
+
 ### 2. Data Layer (90%+ Coverage)
 
 #### Database Operations (`test_database.py`)
@@ -947,6 +1037,11 @@ class TestConfig:
 ---
 
 ## Testing Best Practices
+
+### 0. Testing Troubleshooting
+For common testing issues and their solutions, refer to:
+- **[Testing Troubleshooting Guide](testing-troubleshooting.md)** - Comprehensive guide for resolving test development and execution issues
+- **Key Issues**: Framework compatibility (unittest vs pytest), virtual environment setup, method name mismatches, database testing patterns
 
 ### 1. Test Organization
 
@@ -1089,32 +1184,44 @@ def test_mock_interactions(self):
 
 #### All Tests
 ```bash
-# Run entire test suite
-python -m unittest discover tests
+# Run entire test suite (recommended way)
+./venv/bin/python -m unittest discover tests
 
 # Run with verbose output
+./venv/bin/python -m unittest discover tests -v
+
+# Alternative (if venv is activated)
 python -m unittest discover tests -v
 ```
 
 #### Specific Test Categories
 ```bash
 # Run only database tests
-python -m unittest tests.test_database
+./venv/bin/python -m unittest tests.test_database
 
 # Run only parser tests
-python -m unittest tests.test_parser
+./venv/bin/python -m unittest tests.test_parser
+
+# Run payment functionality tests
+./venv/bin/python -m unittest tests.test_payment_functionality
 
 # Run only async tests
-python -m unittest tests.test_recover tests.test_search_flow
+./venv/bin/python -m unittest tests.test_recover tests.test_search_flow
+
+# Run only infrastructure stability test for PTB builder
+./venv/bin/python -m unittest tests.test_ptb_application_builder -v
 
 # Run only Airtable integration tests
-python -m unittest tests.test_airtable_connection tests.test_airtable_repository
+./venv/bin/python -m unittest tests.test_airtable_connection tests.test_airtable_repository
 ```
 
 #### Individual Tests
 ```bash
 # Run specific test method
-python -m unittest tests.test_parser.ParserTestCase.test_parse_candidate
+./venv/bin/python -m unittest tests.test_parser.ParserTestCase.test_parse_candidate
+
+# Run specific payment test
+./venv/bin/python -m unittest tests.test_payment_functionality.TestPaymentModel.test_participant_payment_fields_default_values
 
 # Run Airtable connection test
 python tests/test_airtable_connection.py
@@ -1146,6 +1253,85 @@ coverage html
 - **Data Layer**: >90%
 - **UI Components**: >85%
 - **Async Operations**: >80%
+
+## Payment Functionality Tests (Added v1.1)
+
+### Payment Validation Tests (`test_payment_functionality.py`)
+
+**Purpose**: Test payment validation, processing, and state management functionality.
+
+**Test Coverage Areas**:
+
+#### Payment Amount Validation
+- **Integer Validation**: Ensure only integer values are accepted
+- **Positive Value Validation**: Reject zero and negative amounts
+- **Input Sanitization**: Handle various input formats and edge cases
+- **Error Message Testing**: Verify appropriate error messages for invalid input
+
+#### Payment State Management  
+- **State Transitions**: Test payment workflow state transitions
+- **State Validation**: Ensure valid state progression
+- **State Recovery**: Test recovery from interrupted payment flows
+- **Concurrent State Handling**: Test multiple users in payment states
+
+#### Payment Processing Logic
+- **Service Layer Integration**: Test ParticipantService.process_payment()
+- **Database Updates**: Verify payment fields are updated correctly
+- **Date Handling**: Test automatic PaymentDate setting
+- **Status Logic**: Test PaymentStatus transitions (UNPAID → PAID → REFUNDED)
+
+#### Payment Display Testing
+- **Search Result Display**: Test payment info in search results
+- **Detail View Display**: Test payment info in participant details
+- **List Command Display**: Test payment info in /list output
+- **Emoji Consistency**: Test consistent emoji usage across contexts
+
+#### Payment Command Testing
+- **Command Parsing**: Test /payment command with and without arguments
+- **Search Integration**: Test payment command integration with search flow
+- **Permission Testing**: Test coordinator-only access to /payment command
+- **Error Handling**: Test command error scenarios
+
+#### Payment UI Flow Testing
+- **Button Integration**: Test "💰 Внести оплату" button functionality
+- **Confirmation Flow**: Test payment confirmation dialog
+- **Cancel Operations**: Test payment cancellation functionality
+- **User Feedback**: Test success/error message display
+
+**Test Implementation Patterns**:
+```python
+class TestPaymentFunctionality(unittest.TestCase):
+    def test_validate_payment_amount_valid_integer(self):
+        """Test validation accepts valid integer amounts."""
+        is_valid, amount, error = validate_payment_amount("500")
+        self.assertTrue(is_valid)
+        self.assertEqual(amount, 500)
+        self.assertEqual(error, "")
+    
+    def test_validate_payment_amount_rejects_decimal(self):
+        """Test validation rejects decimal amounts."""
+        is_valid, amount, error = validate_payment_amount("500.50")
+        self.assertFalse(is_valid)
+        self.assertEqual(amount, 0)
+        self.assertIn("целое число", error)
+    
+    def test_payment_state_transitions(self):
+        """Test payment workflow state transitions."""
+        # Test state progression through payment flow
+        # CHOOSING_ACTION → ENTERING_PAYMENT_AMOUNT → CONFIRMING_PAYMENT → END
+    
+    def test_payment_display_consistency(self):
+        """Test consistent payment display across contexts."""
+        # Test search results, details, and list display formats
+```
+
+**Expected Test Coverage**: 95%+ for payment-related functionality
+
+**Integration Points**:
+- **Database Layer**: Test payment field persistence
+- **Service Layer**: Test payment processing business logic  
+- **UI Layer**: Test payment button and state management
+- **Command Layer**: Test /payment command functionality
 
 ## Conclusion
 

@@ -5,6 +5,7 @@ from utils.field_normalizer import (
     normalize_role,
     normalize_size,
     normalize_department,
+    normalize_payment_status,
 )
 
 
@@ -46,6 +47,11 @@ def recognize_department(token: str) -> Optional[str]:
         return fuzzy_result[0] if fuzzy_result else None
     except ImportError:
         return None
+
+
+def recognize_payment_status(token: str) -> Optional[str]:
+    """Распознает статус оплаты из токена."""
+    return normalize_payment_status(token)
 
 
 def recognize_church(token: str) -> Optional[str]:

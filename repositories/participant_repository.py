@@ -135,6 +135,46 @@ class AbstractParticipantRepository(ABC):
         """
         pass
 
+    @abstractmethod
+    def update_payment(self, participant_id: Union[int, str], status: str, amount: int, date: str) -> bool:
+        """
+        ✅ НОВЫЙ МЕТОД: обновление статуса оплаты.
+
+        Args:
+            participant_id: ID участника
+            status: Статус оплаты (Unpaid, Paid, Partial, Refunded)
+            amount: Сумма в шейкелях (целое число)
+            date: Дата оплаты в ISO формате
+
+        Returns:
+            bool: True если обновление успешно
+
+        Raises:
+            ParticipantNotFoundError: Если участник не найден
+            ValidationError: При неверных данных
+        """
+        pass
+
+    @abstractmethod
+    def get_unpaid_participants(self) -> List[Participant]:
+        """
+        ✅ НОВЫЙ МЕТОД: получение неоплаченных участников.
+
+        Returns:
+            List[Participant]: Список неоплаченных участников
+        """
+        pass
+
+    @abstractmethod
+    def get_payment_summary(self) -> Dict:
+        """
+        ✅ НОВЫЙ МЕТОД: получение статистики по платежам.
+
+        Returns:
+            Dict: Статистика платежей с подсчетами и суммами
+        """
+        pass
+
 
 class BaseParticipantRepository(AbstractParticipantRepository):
     """Base repository with shared validation helpers."""
@@ -157,6 +197,9 @@ from database import (
     get_all_participants,
     update_participant,
     delete_participant,
+    update_payment_status,
+    get_unpaid_participants,
+    get_payment_summary,
 )
 from utils.exceptions import (
     ParticipantNotFoundError,
@@ -293,3 +336,70 @@ class SqliteParticipantRepository(BaseParticipantRepository):
         ✅ НОВЫЙ МЕТОД: проверка существования.
         """
         return self.get_by_id(participant_id) is not None
+
+    def update_payment(self, participant_id: Union[int, str], status: str, amount: int, date: str) -> bool:
+        """
+        ✅ НОВЫЙ МЕТОД: обновление статуса оплаты.
+        """
+        participant_id = int(participant_id)
+        logger.info(f"Updating payment for participant {participant_id}: {status}, {amount}₪")
+        try:
+            return update_payment_status(participant_id, status, amount, date)
+        except sqlite3.Error as e:
+            raise DatabaseError(f"SQLite error on update_payment: {e}") from e
+
+    def get_unpaid_participants(self) -> List[Participant]:
+        """
+        ✅ НОВЫЙ МЕТОД: получение неоплаченных участников.
+        """
+        logger.info("Getting unpaid participants from SQLite")
+        try:
+            unpaid_dicts = get_unpaid_participants()
+            return [
+                Participant(
+                    **{k: v for k, v in p.items() if k in Participant.__annotations__}
+                )
+                for p in unpaid_dicts
+            ]
+        except sqlite3.Error as e:
+            raise DatabaseError(f"SQLite error on get_unpaid_participants: {e}") from e
+
+    def get_payment_summary(self) -> Dict:
+        """
+        ✅ НОВЫЙ МЕТОД: получение статистики по платежам.
+        """
+        logger.info("Getting payment summary from SQLite")
+        try:
+            return get_payment_summary()
+        except sqlite3.Error as e:
+            raise DatabaseError(f"SQLite error on get_payment_summary: {e}") from e
+
+    # ✅ АЛИАСЫ ДЛЯ ОБРАТНОЙ СОВМЕСТИМОСТИ С ТЕСТАМИ
+    
+    def add_participant(self, participant: Participant) -> int:
+        """Алиас для обратной совместимости с тестами."""
+        return self.add(participant)
+
+    def get_participant_by_id(self, participant_id: Union[int, str]) -> Optional[Participant]:
+        """Алиас для обратной совместимости с тестами."""
+        return self.get_by_id(participant_id)
+
+    def update_participant(self, participant_id: Union[int, str], data: Dict) -> bool:
+        """
+        Алиас для обратной совместимости с тестами.
+        Принимает participant_id и Dict, преобразует в Participant для update.
+        """
+        from utils.exceptions import ParticipantNotFoundError
+        
+        # Получаем текущего участника
+        current = self.get_by_id(participant_id)
+        if current is None:
+            raise ParticipantNotFoundError(f"Participant with id {participant_id} not found")
+        
+        # Создаем обновленные данные, объединив текущие с новыми
+        updated_dict = asdict(current)
+        updated_dict.update({k: v for k, v in data.items() if k in Participant.__annotations__})
+        
+        # Создаем новый объект Participant и обновляем
+        updated_participant = Participant(**updated_dict)
+        return self.update(updated_participant)
