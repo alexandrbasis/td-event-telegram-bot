@@ -10,8 +10,7 @@ __pycache__/
 .Python
 env/
 venv/
-telegram-bot-env/
-CLAUDE.md
+.venv/
 
 # IDE
 .vscode/
@@ -29,9 +28,8 @@ logs/
 # Development files
 tasks/
 Tasks/
-activate_venv.sh
-test_airtable_connection.py
-test_airtable_repository.py
+# Cursor / editor metadata
+.cursor/
 
 # Temporary files
 *.tmp
@@ -42,4 +40,3 @@ htmlcov/
 
 # Editor files
 *.sublime-*
-.vscode/settings.json
