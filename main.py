@@ -117,6 +117,17 @@ def smart_cleanup_on_error(func):
         try:
             return await func(update, context, *args, **kwargs)
 
+        except ApplicationHandlerStop as stop:
+            # Не обрабатываем служебное исключение PTB — оно используется для
+            # остановки дальнейших обработчиков в текущей группе. Должно
+            # пробрасываться дальше, чтобы ConversationHandler корректно
+            # управлял переходами состояний и блокировал fallback.
+            logger.debug(
+                "ApplicationHandlerStop propagated from %s with state: %s",
+                func.__name__, getattr(stop, "state", None)
+            )
+            raise
+
         except ValidationError as e:
             # Ошибки валидации - остаёмся в текущем состоянии
             logging.getLogger("errors").warning(

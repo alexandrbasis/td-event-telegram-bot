@@ -1,6 +1,6 @@
 # Test Structure Documentation
 
-**Version**: 1.5  
+**Version**: 1.7  
 **Last Updated**: August 14, 2025
 
 ## Overview
@@ -45,6 +45,7 @@ tests/
 │   ├── test_search_engine.py      # Search functionality
 │   ├── test_airtable_connection.py # Airtable API connectivity
 │   ├── test_airtable_repository.py # Airtable repository integration
+│   ├── test_airtable_paymentdate.py # Airtable mapping for PaymentDate (v1.7)
 │   └── test_payment_functionality.py # Payment system comprehensive testing
 │
 ├── Async Tests (Bot interactions)
@@ -53,7 +54,9 @@ tests/
 │   ├── test_enum_selection_context.py # UI interactions
 │   ├── test_field_edit_cancel.py  # Cancel operations
 │   ├── test_search_double_messages.py # Search flow issues analysis (v1.3)
-│   └── test_search_fixes.py       # Search flow fixes verification (v1.3)
+│   ├── test_search_fixes.py       # Search flow fixes verification (v1.3)
+│   ├── test_application_handler_stop_decorator.py # Decorator propagation test (v1.6)
+│   └── test_search_integration_flow.py # Search selection integration test (v1.6)
 │
 ├── UI/UX Tests (Interface components)
 │   ├── test_edit_keyboard.py      # Keyboard generation
