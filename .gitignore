@@ -28,6 +28,7 @@ logs/
 
 # Development files
 tasks/
+Tasks/
 activate_venv.sh
 test_airtable_connection.py
 test_airtable_repository.py
