@@ -25,6 +25,9 @@ venv/
 logs/
 *.log
 
+# Local SQLite databases
+*.db
+
 # Development files
 tasks/
 Tasks/
