@@ -1,6 +1,7 @@
 import logging
 from typing import Dict, List, Optional, Union
 import time
+from datetime import datetime
 
 from pyairtable.api.types import RecordDict
 from pyairtable.formulas import match
@@ -18,6 +19,20 @@ from utils.exceptions import (
 logger = logging.getLogger(__name__)
 
 
+def _normalize_date_to_iso(value: str) -> str:
+    """Normalize various date formats to ISO YYYY-MM-DD for Airtable."""
+    if not value:
+        return ""
+    v = str(value).strip()
+    for fmt in ("%Y-%m-%d", "%d/%m/%Y", "%d.%m.%Y", "%d-%m-%Y", "%Y/%m/%d"):
+        try:
+            return datetime.strptime(v, fmt).date().isoformat()
+        except ValueError:
+            continue
+    # Return as-is if parsing fails; upstream validation may handle it
+    return v
+
+
 class AirtableParticipantRepository(BaseParticipantRepository):
     """Airtable implementation of participant repository."""
 
@@ -27,7 +42,7 @@ class AirtableParticipantRepository(BaseParticipantRepository):
 
     def _participant_to_airtable_fields(self, participant: Participant) -> dict:
         """Convert Participant dataclass to Airtable fields."""
-        return {
+        fields = {
             'FullNameRU': participant.FullNameRU,
             'FullNameEN': participant.FullNameEN or '',
             'Gender': participant.Gender,
@@ -40,8 +55,10 @@ class AirtableParticipantRepository(BaseParticipantRepository):
             'ContactInformation': participant.ContactInformation or '',
             'PaymentStatus': participant.PaymentStatus or 'Unpaid',
             'PaymentAmount': participant.PaymentAmount or 0,
-            'PaymentDate': participant.PaymentDate or '',
         }
+        if participant.PaymentDate:
+            fields['PaymentDate'] = _normalize_date_to_iso(participant.PaymentDate)
+        return fields
 
     def _airtable_record_to_participant(self, record: RecordDict) -> Participant:
         """Convert Airtable record to Participant dataclass."""
@@ -168,10 +185,17 @@ class AirtableParticipantRepository(BaseParticipantRepository):
         )
 
         try:
-            # Convert empty strings to actual empty values for Airtable
+            # Handle PaymentDate normalization/clearing and preserve None (JSON null)
+            if 'PaymentDate' in fields:
+                raw = fields.get('PaymentDate')
+                if raw is None or str(raw).strip() == '':
+                    fields['PaymentDate'] = None
+                else:
+                    fields['PaymentDate'] = _normalize_date_to_iso(str(raw))
+
             airtable_fields = {}
             for key, value in fields.items():
-                airtable_fields[key] = value if value else ''
+                airtable_fields[key] = value if value is not None else None
 
             self.table.update(participant_id, airtable_fields)
 
@@ -215,10 +239,15 @@ class AirtableParticipantRepository(BaseParticipantRepository):
         logger.info(f"Updating payment for participant {participant_id}: {status}, {amount}₪")
 
         try:
+            # Normalize or clear date field
+            if date is None or str(date).strip() == '':
+                normalized_date = None
+            else:
+                normalized_date = _normalize_date_to_iso(str(date))
             payment_fields = {
                 'PaymentStatus': status,
                 'PaymentAmount': amount,
-                'PaymentDate': date,
+                'PaymentDate': normalized_date,
             }
             self.table.update(participant_id, payment_fields)
 
