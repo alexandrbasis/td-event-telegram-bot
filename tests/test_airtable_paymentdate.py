@@ -62,3 +62,26 @@ def test_update_payment_normalizes_date(monkeypatch):
     assert fields['PaymentDate'] == '2025-08-14'
 
 
+def test_update_payment_clears_with_null_when_empty(monkeypatch):
+    monkeypatch.setenv("AIRTABLE_TOKEN", "test")
+    monkeypatch.setenv("AIRTABLE_BASE_ID", "test")
+    repo = make_repo()
+    repo.update_payment('rec3', status='Unpaid', amount=0, date='')
+    _, fields = repo.table.last_update
+    assert fields['PaymentDate'] is None
+
+
+def test_add_normalizes_dot_and_slash_year_first(monkeypatch):
+    monkeypatch.setenv("AIRTABLE_TOKEN", "test")
+    monkeypatch.setenv("AIRTABLE_BASE_ID", "test")
+    repo = make_repo()
+    # DD.MM.YYYY
+    p = Participant(FullNameRU='X', PaymentDate='14.08.2025')
+    repo.add(p)
+    assert repo.table.last_create['PaymentDate'] == '2025-08-14'
+    # YYYY/MM/DD
+    p2 = Participant(FullNameRU='Y', PaymentDate='2025/08/14')
+    repo.add(p2)
+    assert repo.table.last_create['PaymentDate'] == '2025-08-14'
+
+

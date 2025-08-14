@@ -239,11 +239,15 @@ class AirtableParticipantRepository(BaseParticipantRepository):
         logger.info(f"Updating payment for participant {participant_id}: {status}, {amount}₪")
 
         try:
-            date = _normalize_date_to_iso(date) if date else date
+            # Normalize or clear date field
+            if date is None or str(date).strip() == '':
+                normalized_date = None
+            else:
+                normalized_date = _normalize_date_to_iso(str(date))
             payment_fields = {
                 'PaymentStatus': status,
                 'PaymentAmount': amount,
-                'PaymentDate': date,
+                'PaymentDate': normalized_date,
             }
             self.table.update(participant_id, payment_fields)
 
