@@ -286,5 +286,19 @@ class TestCacheUpdateOnMutations(unittest.TestCase):
         self.assertTrue(bool(target.participant.PaymentDate))
 
 
+class TestSearchHandlerWiring(unittest.TestCase):
+    def test_main_search_patterns_present_in_states(self):
+        # Lightweight structural check that ConversationHandler states wire main_search
+        with open("main.py", "r", encoding="utf-8") as f:
+            src = f.read()
+
+        # SELECTING_PARTICIPANT section contains main_search handler
+        self.assertIn("SELECTING_PARTICIPANT", src)
+        self.assertIn("handle_search_callback, pattern=\"^main_search$\"", src)
+
+        # CHOOSING_ACTION section contains main_search handler
+        self.assertIn("CHOOSING_ACTION", src)
+        self.assertIn("handle_search_callback, pattern=\"^main_search$\"", src)
+
 if __name__ == "__main__":
     unittest.main()

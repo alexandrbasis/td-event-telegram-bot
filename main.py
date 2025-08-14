@@ -3326,10 +3326,14 @@ def main():
             SELECTING_PARTICIPANT: [
                 CallbackQueryHandler(
                     handle_participant_selection, pattern="^select_participant_"
-                )
+                ),
+                # Allow starting a new search directly from results screen
+                CallbackQueryHandler(handle_search_callback, pattern="^main_search$")
             ],
             CHOOSING_ACTION: [
                 CallbackQueryHandler(handle_action_selection, pattern="^action_"),
+                # Allow starting a new search directly from actions screen
+                CallbackQueryHandler(handle_search_callback, pattern="^main_search$")
             ],
             EXECUTING_ACTION: [
                 CallbackQueryHandler(
@@ -3338,12 +3342,16 @@ def main():
                 CallbackQueryHandler(
                     handle_action_selection, pattern="^action_cancel$"
                 ),
+                # Optional: support new search while in executing action state
+                CallbackQueryHandler(handle_search_callback, pattern="^main_search$")
             ],
             ENTERING_PAYMENT_AMOUNT: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, handle_payment_amount_input)
             ],
             CONFIRMING_PAYMENT: [
                 CallbackQueryHandler(handle_payment_confirmation, pattern="^(confirm|cancel)_payment$"),
+                # Optional: support new search while confirming payment
+                CallbackQueryHandler(handle_search_callback, pattern="^main_search$")
             ],
         },
         fallbacks=[
