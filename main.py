@@ -2567,12 +2567,39 @@ async def handle_save_confirmation(
             parse_mode="Markdown",
             reply_markup=keyboard,
         )
-    except (DatabaseError, BotException, ValidationError) as e:
+        cleanup_user_data_safe(context, update.effective_user.id)
+        return ConversationHandler.END
+    except ValidationError as e:
+        # Не завершаем диалог и не очищаем состояние при валидационных ошибках
+        err_text = str(e)
+        # Спец-случай: для роли TEAM необходимо указать департамент → показываем клавиатуру департаментов
+        if "TEAM" in err_text and "департамент" in err_text.lower():
+            kb = get_department_selection_keyboard_required()
+            msg = await query.message.reply_text(
+                "⚠️ Для роли TEAM необходимо указать департамент. Пожалуйста, выберите департамент:",
+                reply_markup=kb,
+            )
+            _add_message_to_cleanup(context, msg.message_id)
+            return CONFIRMING_DATA
+
+        # Общий случай: показываем сообщение об ошибке с кнопками Назад/Отмена
+        error_keyboard = InlineKeyboardMarkup(
+            [
+                [
+                    InlineKeyboardButton("↩️ Назад", callback_data="field_edit_cancel"),
+                    InlineKeyboardButton("❌ Отмена", callback_data="main_cancel"),
+                ]
+            ]
+        )
+        await query.message.reply_text(
+            f"❌ Ошибка валидации: {e}", reply_markup=error_keyboard
+        )
+        return CONFIRMING_DATA
+    except (DatabaseError, BotException) as e:
         logger.error("Error during save confirmation: %s", e)
         await query.message.reply_text(f"❌ Произошла ошибка: {e}")
-
-    cleanup_user_data_safe(context, update.effective_user.id)
-    return ConversationHandler.END
+        cleanup_user_data_safe(context, update.effective_user.id)
+        return ConversationHandler.END
 
 
 # ✅ ДОБАВИТЬ: Новая функция форматирования
