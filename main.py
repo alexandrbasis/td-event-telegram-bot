@@ -772,7 +772,11 @@ async def show_confirmation(
     user_id = update.effective_user.id
     logger.info(f"Showing confirmation for user {user_id}")
     logger.debug(f"user_data keys: {list(context.user_data.keys())}")
-    confirmation_text = "🔍 Вот что удалось распознать. Всё правильно?\n\n"
+    # If editing existing participant, show explicit edit-mode header
+    if "participant_id" in context.user_data:
+        confirmation_text = "✏️ Режим редактирования — вы изменяете существующего участника\n\n"
+    else:
+        confirmation_text = "🔍 Вот что удалось распознать. Всё правильно?\n\n"
     confirmation_text += format_participant_block(participant_data)
     confirmation_text += '\n\n✅ Нажмите "Сохранить", чтобы завершить, или выберите поле для исправления.'
     keyboard = get_edit_keyboard(participant_data)
@@ -1571,7 +1575,7 @@ async def handle_action_selection(
             return CHOOSING_ACTION
 
         context.user_data["participant_id"] = participant_id
-        context.user_data["parsed_participant"] = selected_participant
+        context.user_data["parsed_participant"] = asdict(selected_participant)
 
         user_logger.log_user_action(
             user_id,
@@ -2683,6 +2687,13 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Отладка состояния пользователя
     logger.info(f"User {user_id} state: {context.user_data}")
 
+    # Reroute text input to confirmation handler if user is editing a field
+    if context.user_data.get("field_to_edit"):
+        # Delegate to confirmation handler to apply the edit and refresh confirmation
+        await handle_participant_confirmation(update, context)
+        # Prevent further processing of this message
+        raise ApplicationHandlerStop(CONFIRMING_DATA)
+
     # В будущем здесь будет NLP обработка
     await update.message.reply_text(
         f'🤖 Получено сообщение: "{message_text}"\n\n'
@@ -3436,6 +3447,13 @@ def main():
     # Global handler to support edit_* buttons when entering edit from search flow
     application.add_handler(
         CallbackQueryHandler(edit_field_callback, pattern="^edit_")
+    )
+
+    # Global handler to support enum selections when editing is initiated from search flow
+    application.add_handler(
+        CallbackQueryHandler(
+            handle_enum_selection, pattern="^(gender|role|size|dept)_.+$"
+        )
     )
 
     # Регистрируем обработчики команд
