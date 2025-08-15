@@ -1,6 +1,6 @@
 # Test Structure Documentation
 
-**Version**: 2.1  
+**Version**: 2.2  
 **Last Updated**: August 15, 2025
 
 ## Overview
@@ -51,6 +51,7 @@ tests/
 ├── Async Tests (Bot interactions)
 │   ├── test_recover.py            # Error recovery flows
 │   ├── test_search_flow.py        # Search conversation flows (+cache invalidation tests v1.8; new-search flow tests v1.9)
+│   ├── test_search_edit_flow.py   # Edit from search flow: global ^edit_ handler, cancel, and guard (v2.2)
 │   ├── test_delete_logging.py     # Delete logging validation (v1.8)
 │   ├── test_enum_selection_context.py # UI interactions
 │   ├── test_field_edit_cancel.py  # Cancel operations
