@@ -1,7 +1,7 @@
 # Test Structure Documentation
 
-**Version**: 1.9  
-**Last Updated**: August 14, 2025
+**Version**: 2.1  
+**Last Updated**: August 15, 2025
 
 ## Overview
 
@@ -377,6 +377,24 @@ class TestJSONSerializationFix(unittest.TestCase):
 ```
 
 ##### New in v1.9 — New Search Button Behavior
+##### New in v2.0 — Edit-after-Add Flow Tests (`test_edit_after_add_flow.py`)
+```python
+class EditAfterAddFlowTests(unittest.IsolatedAsyncioTestCase):
+    async def test_edit_button_enters_conversation(self):
+        # Verify that pressing "✏️ Edit" from success screen enters CONFIRMING_DATA
+        # and that conversation wiring is via entry_points pattern "^edit_participant_".
+        ...
+
+    async def test_edit_field_callback_triggers_after_entry(self):
+        # Verify that after entry, pressing any edit_* button triggers edit_field_callback
+        # and keeps the conversation in CONFIRMING_DATA.
+        ...
+
+    async def test_confirm_save_after_edit_entry(self):
+        # Verify that pressing Save after entering via the new edit entry works and ends the conversation.
+        ...
+```
+
 ```python
 class SearchFlowTestCase(unittest.IsolatedAsyncioTestCase):
     async def test_new_search_works_from_selecting_participant(self):
