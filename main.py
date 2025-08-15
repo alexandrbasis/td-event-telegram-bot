@@ -2765,6 +2765,15 @@ async def edit_field_callback(
     query = update.callback_query
     await query.answer()
 
+    # UX guard: if there is no participant data in context, show a friendly hint
+    if not context.user_data.get("parsed_participant"):
+        await _send_response_with_menu_button(
+            update,
+            "ℹ️ Данные для редактирования не найдены.\n\n"
+            "Выберите участника через поиск (🔍) или начните добавление с /add.",
+        )
+        return CONFIRMING_DATA
+
     _add_message_to_cleanup(context, query.message.message_id)
 
     field_to_edit = query.data.split("_")[1]
@@ -3423,6 +3432,11 @@ def main():
     # ConversationHandler должен быть зарегистрирован первым
     application.add_handler(search_conv)
     application.add_handler(add_conv)
+
+    # Global handler to support edit_* buttons when entering edit from search flow
+    application.add_handler(
+        CallbackQueryHandler(edit_field_callback, pattern="^edit_")
+    )
 
     # Регистрируем обработчики команд
     application.add_handler(CommandHandler("start", start_command))
