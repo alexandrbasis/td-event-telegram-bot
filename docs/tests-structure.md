@@ -1,6 +1,6 @@
 # Test Structure Documentation
 
-**Version**: 2.2  
+**Version**: 2.3  
 **Last Updated**: August 15, 2025
 
 ## Overview
@@ -51,7 +51,7 @@ tests/
 ├── Async Tests (Bot interactions)
 │   ├── test_recover.py            # Error recovery flows
 │   ├── test_search_flow.py        # Search conversation flows (+cache invalidation tests v1.8; new-search flow tests v1.9)
-│   ├── test_search_edit_flow.py   # Edit from search flow: global ^edit_ handler, cancel, and guard (v2.2)
+│   ├── test_search_edit_flow.py   # Edit from search flow: global ^edit_ handler, cancel, guard; enum/back/save; text reroute (v2.3)
 │   ├── test_delete_logging.py     # Delete logging validation (v1.8)
 │   ├── test_enum_selection_context.py # UI interactions
 │   ├── test_field_edit_cancel.py  # Cancel operations
@@ -62,7 +62,7 @@ tests/
 │
 ├── UI/UX Tests (Interface components)
 │   ├── test_edit_keyboard.py      # Keyboard generation
-│   └── test_confirmation_template.py # Template parsing
+│   └── test_confirmation_template.py # Template parsing (now tolerant to edit-mode banner, v2.3)
 │
 ├── Infrastructure Tests (System components)
 │   ├── test_timeouts.py           # Timeout management
@@ -75,6 +75,23 @@ tests/
     ├── test_role_department_logic.py # Business rules
     └── test_payment_functionality.py # Payment validation and processing (Added v1.1)
 ```
+
+---
+
+## UI/UX Tests (Addendum)
+
+#### test_confirmation_template.py (v2.3)
+- Added a case verifying that an edit-mode header in the confirmation message does not break template parsing.
+
+## Async Tests (Addendum)
+
+#### test_search_edit_flow.py (v2.3)
+- New cases:
+  - `test_global_enum_handler_registered`
+  - `test_enum_selection_after_search_entry`
+  - `test_text_input_after_search_edit_routes_to_confirmation`
+  - `test_confirm_save_after_search_entry`
+  - Structural checks for global `field_edit_cancel` and `confirm_save` registrations
 
 ---
 

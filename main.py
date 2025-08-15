@@ -3456,6 +3456,14 @@ def main():
         )
     )
 
+    # Global handlers to ensure back/save actions work when edit starts from search flow
+    application.add_handler(
+        CallbackQueryHandler(handle_field_edit_cancel, pattern="^field_edit_cancel$")
+    )
+    application.add_handler(
+        CallbackQueryHandler(handle_save_confirmation, pattern="^confirm_save$")
+    )
+
     # Регистрируем обработчики команд
     application.add_handler(CommandHandler("start", start_command))
     application.add_handler(CommandHandler("help", help_command))
