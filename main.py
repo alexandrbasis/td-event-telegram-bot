@@ -2623,12 +2623,11 @@ async def handle_edit_participant_callback(
     await query.answer()
 
     try:
-        participant_id_raw = query.data.split("_")[-1]
-        participant_id = (
-            int(participant_id_raw)
-            if participant_id_raw.isdigit()
-            else participant_id_raw
-        )
+        match = re.match(r"^edit_participant_(?P<id>[A-Za-z0-9_-]+)$", query.data)
+        if not match:
+            raise ValueError("Invalid callback data for edit_participant")
+        participant_id_raw = match.group("id")
+        participant_id = int(participant_id_raw) if participant_id_raw.isdigit() else participant_id_raw
     except (IndexError, ValueError):
         await query.message.reply_text("❌ Некорректный ID участника.")
         return ConversationHandler.END
@@ -3368,6 +3367,9 @@ def main():
         entry_points=[
             CommandHandler("add", add_command),
             CallbackQueryHandler(handle_add_callback, pattern="^main_add$"),
+            CallbackQueryHandler(
+                handle_edit_participant_callback, pattern="^edit_participant_"
+            ),
         ],
         states={
             COLLECTING_DATA: [
@@ -3437,11 +3439,6 @@ def main():
     application.add_handler(CommandHandler("list", list_command))
     application.add_handler(CommandHandler("export", export_command))
     application.add_handler(CommandHandler("cancel", cancel_command))
-    application.add_handler(
-        CallbackQueryHandler(
-            handle_edit_participant_callback, pattern="^edit_participant_"
-        )
-    )
     application.add_handler(
         CallbackQueryHandler(
             handle_session_recovery_callback,
