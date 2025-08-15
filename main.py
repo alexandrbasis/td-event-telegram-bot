@@ -145,20 +145,36 @@ def smart_cleanup_on_error(func):
                 },
                 func.__name__,
             )
-            error_keyboard = InlineKeyboardMarkup(
-                [
+            # In edit/confirmation context, show Back/Cancel; otherwise show generic options
+            current_state = context.user_data.get("current_state", CONFIRMING_DATA)
+            if current_state == CONFIRMING_DATA:
+                error_keyboard = InlineKeyboardMarkup(
                     [
-                        InlineKeyboardButton(
-                            "🔄 Попробовать снова", callback_data="main_add"
-                        )
-                    ],
+                        [
+                            InlineKeyboardButton(
+                                "↩️ Назад", callback_data="field_edit_cancel"
+                            ),
+                            InlineKeyboardButton(
+                                "❌ Отмена", callback_data="main_cancel"
+                            ),
+                        ]
+                    ]
+                )
+            else:
+                error_keyboard = InlineKeyboardMarkup(
                     [
-                        InlineKeyboardButton(
-                            "🏠 Главное меню", callback_data="main_menu"
-                        )
-                    ],
-                ]
-            )
+                        [
+                            InlineKeyboardButton(
+                                "🔄 Попробовать снова", callback_data="main_add"
+                            )
+                        ],
+                        [
+                            InlineKeyboardButton(
+                                "🏠 Главное меню", callback_data="main_menu"
+                            )
+                        ],
+                    ]
+                )
             try:
                 if update.message:
                     await update.message.reply_text(
@@ -179,7 +195,6 @@ def smart_cleanup_on_error(func):
                 )
 
             # Возвращаем текущее состояние - НЕ завершаем разговор
-            current_state = context.user_data.get("current_state", CONFIRMING_DATA)
             return current_state
 
         except ParticipantNotFoundError as e:
@@ -2567,12 +2582,39 @@ async def handle_save_confirmation(
             parse_mode="Markdown",
             reply_markup=keyboard,
         )
-    except (DatabaseError, BotException, ValidationError) as e:
+        cleanup_user_data_safe(context, update.effective_user.id)
+        return ConversationHandler.END
+    except ValidationError as e:
+        # Не завершаем диалог и не очищаем состояние при валидационных ошибках
+        err_text = str(e)
+        # Спец-случай: для роли TEAM необходимо указать департамент → показываем клавиатуру департаментов
+        if "TEAM" in err_text and "департамент" in err_text.lower():
+            kb = get_department_selection_keyboard_required()
+            msg = await query.message.reply_text(
+                "⚠️ Для роли TEAM необходимо указать департамент. Пожалуйста, выберите департамент:",
+                reply_markup=kb,
+            )
+            _add_message_to_cleanup(context, msg.message_id)
+            return CONFIRMING_DATA
+
+        # Общий случай: показываем сообщение об ошибке с кнопками Назад/Отмена
+        error_keyboard = InlineKeyboardMarkup(
+            [
+                [
+                    InlineKeyboardButton("↩️ Назад", callback_data="field_edit_cancel"),
+                    InlineKeyboardButton("❌ Отмена", callback_data="main_cancel"),
+                ]
+            ]
+        )
+        await query.message.reply_text(
+            f"❌ Ошибка валидации: {e}", reply_markup=error_keyboard
+        )
+        return CONFIRMING_DATA
+    except (DatabaseError, BotException) as e:
         logger.error("Error during save confirmation: %s", e)
         await query.message.reply_text(f"❌ Произошла ошибка: {e}")
-
-    cleanup_user_data_safe(context, update.effective_user.id)
-    return ConversationHandler.END
+        cleanup_user_data_safe(context, update.effective_user.id)
+        return ConversationHandler.END
 
 
 # ✅ ДОБАВИТЬ: Новая функция форматирования
@@ -2885,6 +2927,33 @@ async def handle_enum_selection(
 
     if job := context.user_data.pop("clear_edit_job", None):
         job.schedule_removal()
+
+    # If user switched Role to TEAM during edit, immediately prompt for Department
+    if field == "Role" and value == "TEAM":
+        # Structured logging for review suggestion
+        try:
+            user_logger.log_user_action(
+                user_id,
+                "switch_role_to_team",
+                {"previous_role": before_role},
+            )
+        except Exception:
+            pass
+        kb = get_department_selection_keyboard_required()
+        msg = await query.message.reply_text(
+            "🏢 Вы выбрали роль Команда. Пожалуйста, выберите департамент:",
+            reply_markup=kb,
+        )
+        _add_message_to_cleanup(context, msg.message_id)
+        try:
+            user_logger.log_user_action(
+                user_id,
+                "prompt_department_shown",
+                {"context": "edit_flow"},
+            )
+        except Exception:
+            pass
+        return CONFIRMING_DATA
 
     await show_confirmation(update, context, updated_data)
     return CONFIRMING_DATA

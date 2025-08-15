@@ -356,6 +356,216 @@ class TestSearchEditFlow(unittest.IsolatedAsyncioTestCase):
         )
 
 
+    async def test_prompt_department_after_switch_role_to_team(self):
+        # After switching Role to TEAM during edit confirmation, bot should prompt for Department immediately
+        from main import (
+            handle_action_selection,
+            handle_enum_selection,
+            CONFIRMING_DATA,
+        )
+        from models.participant import Participant
+        from types import SimpleNamespace
+        from unittest.mock import AsyncMock, MagicMock, patch
+        
+        user_id = 9
+        participant = Participant(
+            FullNameRU="Тест Пользователь",
+            Gender="M",
+            Size="L",
+            Church="Тест",
+            Role="CANDIDATE",
+        )
+        participant.id = 999
+        
+        context = SimpleNamespace(user_data={"selected_participant": participant}, chat_data={})
+        
+        # Enter edit flow via action_edit
+        action_query = MagicMock()
+        action_query.answer = AsyncMock()
+        action_query.message = MagicMock()
+        action_query.message.reply_text = AsyncMock()
+        action_update = SimpleNamespace(callback_query=action_query, effective_user=SimpleNamespace(id=user_id))
+        action_query.data = "action_edit"
+        
+        with patch("main.user_logger"), \
+             patch("main.COORDINATOR_IDS", [user_id]), \
+             patch("utils.decorators.COORDINATOR_IDS", [user_id]), \
+             patch("main.show_confirmation", new=AsyncMock()):
+            state = await handle_action_selection(action_update, context)
+        
+        self.assertEqual(state, CONFIRMING_DATA)
+        
+        # Now simulate choosing Role → TEAM
+        context.user_data["field_to_edit"] = "Role"
+        enum_query = MagicMock()
+        enum_query.answer = AsyncMock()
+        enum_query.message = MagicMock()
+        enum_query.message.reply_text = AsyncMock()
+        enum_update = SimpleNamespace(callback_query=enum_query, effective_user=SimpleNamespace(id=user_id))
+        enum_query.data = "role_TEAM"
+        
+        with patch("main.get_department_selection_keyboard_required", return_value="DEPT_KB") as kb_mock, \
+             patch("main.show_confirmation", new=AsyncMock()) as mock_conf:
+            next_state = await handle_enum_selection(enum_update, context)
+        
+        # Should remain in confirming state, role updated, department cleared
+        self.assertEqual(next_state, CONFIRMING_DATA)
+        self.assertEqual(context.user_data.get("parsed_participant", {}).get("Role"), "TEAM")
+        self.assertEqual(context.user_data.get("parsed_participant", {}).get("Department", ""), "")
+        
+        # Should prompt department selection immediately instead of showing confirmation
+        mock_conf.assert_not_awaited()
+        enum_query.message.reply_text.assert_awaited()
+        # Verify the department keyboard was used
+        args, kwargs = enum_query.message.reply_text.await_args
+        self.assertIn("reply_markup", kwargs)
+        self.assertEqual(kwargs.get("reply_markup"), "DEPT_KB")
+
+    async def test_department_prompt_has_back_button(self):
+        # Ensure the department prompt message has explanatory text and a back button
+        from main import (
+            handle_action_selection,
+            handle_enum_selection,
+            CONFIRMING_DATA,
+        )
+        from models.participant import Participant
+        from types import SimpleNamespace
+        from unittest.mock import AsyncMock, MagicMock, patch
+
+        user_id = 10
+        participant = Participant(
+            FullNameRU="Тест Пользователь",
+            Gender="M",
+            Size="L",
+            Church="Тест",
+            Role="CANDIDATE",
+        )
+        participant.id = 1001
+
+        context = SimpleNamespace(user_data={"selected_participant": participant}, chat_data={})
+
+        action_query = MagicMock()
+        action_query.answer = AsyncMock()
+        action_query.message = MagicMock()
+        action_query.message.reply_text = AsyncMock()
+        action_update = SimpleNamespace(callback_query=action_query, effective_user=SimpleNamespace(id=user_id))
+        action_query.data = "action_edit"
+
+        with patch("main.user_logger"), \
+             patch("main.COORDINATOR_IDS", [user_id]), \
+             patch("utils.decorators.COORDINATOR_IDS", [user_id]), \
+             patch("main.show_confirmation", new=AsyncMock()):
+            state = await handle_action_selection(action_update, context)
+
+        self.assertEqual(state, CONFIRMING_DATA)
+
+        # Choose Role -> TEAM and verify department prompt
+        context.user_data["field_to_edit"] = "Role"
+        enum_query = MagicMock()
+        enum_query.answer = AsyncMock()
+        enum_query.message = MagicMock()
+        enum_query.message.reply_text = AsyncMock()
+        enum_update = SimpleNamespace(callback_query=enum_query, effective_user=SimpleNamespace(id=user_id))
+        enum_query.data = "role_TEAM"
+
+        with patch("main.show_confirmation", new=AsyncMock()):
+            next_state = await handle_enum_selection(enum_update, context)
+
+        self.assertEqual(next_state, CONFIRMING_DATA)
+
+        # Inspect the reply to ensure message and back button exist
+        args, kwargs = enum_query.message.reply_text.await_args
+        text = args[0] if args else kwargs.get("text", "")
+        self.assertIn("Пожалуйста, выберите департамент", text)
+
+        kb = kwargs.get("reply_markup")
+        self.assertIsNotNone(kb)
+        # InlineKeyboardMarkup.inline_keyboard is list[list[InlineKeyboardButton]]
+        back_found = any(
+            any(getattr(btn, "callback_data", "") == "field_edit_cancel" or getattr(btn, "text", "") == "↩️ Назад" for btn in row)
+            for row in getattr(kb, "inline_keyboard", [])
+        )
+        self.assertTrue(back_found, "Back button not found in department keyboard")
+
+    async def test_save_with_missing_department_keeps_session_and_prompts_department(self):
+        # When saving with Role=TEAM and missing Department, keep session and prompt department
+        from main import handle_action_selection, handle_save_confirmation, CONFIRMING_DATA
+        from models.participant import Participant
+        from types import SimpleNamespace
+        from unittest.mock import AsyncMock, MagicMock, patch
+        from utils.exceptions import ValidationError
+
+        user_id = 11
+        participant = Participant(
+            FullNameRU="Тест Пользователь",
+            Gender="M",
+            Size="L",
+            Church="Тест",
+            Role="CANDIDATE",
+        )
+        participant.id = 2002
+
+        context = SimpleNamespace(user_data={"selected_participant": participant}, chat_data={})
+
+        # Enter edit flow
+        action_query = MagicMock()
+        action_query.answer = AsyncMock()
+        action_query.message = MagicMock()
+        action_query.message.reply_text = AsyncMock()
+        action_update = SimpleNamespace(callback_query=action_query, effective_user=SimpleNamespace(id=user_id), effective_chat=SimpleNamespace(id=1))
+        action_query.data = "action_edit"
+
+        with patch("main.user_logger"), \
+             patch("main.COORDINATOR_IDS", [user_id]), \
+             patch("utils.decorators.COORDINATOR_IDS", [user_id]), \
+             patch("main.show_confirmation", new=AsyncMock()):
+            _ = await handle_action_selection(action_update, context)
+
+        # Prepare parsed_participant with TEAM and missing Department
+        context.user_data["participant_id"] = participant.id
+        context.user_data["parsed_participant"] = {
+            "id": participant.id,
+            "FullNameRU": participant.FullNameRU,
+            "Gender": "M",
+            "Size": "L",
+            "Church": "Тест",
+            "Role": "TEAM",
+            "Department": "",
+        }
+
+        # Simulate pressing Save and service raising validation error
+        save_query = MagicMock()
+        save_query.answer = AsyncMock()
+        save_query.message = MagicMock()
+        save_query.message.reply_text = AsyncMock()
+        save_update = SimpleNamespace(
+            callback_query=save_query,
+            effective_user=SimpleNamespace(id=user_id),
+            effective_chat=SimpleNamespace(id=1),
+        )
+        save_query.data = "confirm_save"
+
+        import main as main_module
+        fake_service = MagicMock()
+        fake_service.update_participant = MagicMock(side_effect=ValidationError("Для роли TEAM необходимо указать департамент"))
+        fake_service.get_participant = MagicMock(return_value=None)
+
+        with patch.object(main_module, "participant_service", fake_service), \
+             patch("main._cleanup_messages", new=AsyncMock()), \
+             patch("main.COORDINATOR_IDS", [user_id]), \
+             patch("utils.decorators.COORDINATOR_IDS", [user_id]), \
+             patch("main.get_department_selection_keyboard_required") as kb_mock:
+            kb_mock.return_value = "DEPT_KB"
+            next_state = await handle_save_confirmation(save_update, context)
+
+        self.assertEqual(next_state, CONFIRMING_DATA)
+        # Ensure department keyboard was prompted instead of ending the conversation
+        args, kwargs = save_query.message.reply_text.await_args
+        self.assertEqual(kwargs.get("reply_markup"), "DEPT_KB")
+        # Ensure user_data still contains parsed_participant
+        self.assertIn("parsed_participant", context.user_data)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
 

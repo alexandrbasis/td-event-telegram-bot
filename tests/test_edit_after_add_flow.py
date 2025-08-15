@@ -153,7 +153,8 @@ class EditAfterAddFlowTests(unittest.IsolatedAsyncioTestCase):
         enum_update = SimpleNamespace(callback_query=enum_query, effective_user=SimpleNamespace(id=user_id))
         enum_query.data = "role_TEAM"
 
-        with patch("main.show_confirmation", new=AsyncMock()) as mock_show:
+        with patch("main.get_department_selection_keyboard_required", return_value="DEPT_KB") as kb_mock, \
+             patch("main.show_confirmation", new=AsyncMock()) as mock_show:
             next_state = await handle_enum_selection(enum_update, context)
 
         self.assertEqual(next_state, CONFIRMING_DATA)
@@ -164,7 +165,12 @@ class EditAfterAddFlowTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(parsed.get("Role"), "TEAM")
         # Department may be set to empty string when switching to/from TEAM
         self.assertIn("Department", parsed)
-        mock_show.assert_awaited()
+        # Now we expect immediate department prompt instead of confirmation
+        mock_show.assert_not_awaited()
+        enum_query.message.reply_text.assert_awaited()
+        args, kwargs = enum_query.message.reply_text.await_args
+        self.assertIn("reply_markup", kwargs)
+        self.assertEqual(kwargs.get("reply_markup"), "DEPT_KB")
 
     async def test_cancel_edit_returns_confirmation_and_clears_timeout(self):
         from main import handle_edit_participant_callback, handle_field_edit_cancel, CONFIRMING_DATA
