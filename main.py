@@ -2888,12 +2888,29 @@ async def handle_enum_selection(
 
     # If user switched Role to TEAM during edit, immediately prompt for Department
     if field == "Role" and value == "TEAM":
+        # Structured logging for review suggestion
+        try:
+            user_logger.log_user_action(
+                user_id,
+                "switch_role_to_team",
+                {"previous_role": before_role},
+            )
+        except Exception:
+            pass
         kb = get_department_selection_keyboard_required()
         msg = await query.message.reply_text(
             "🏢 Вы выбрали роль Команда. Пожалуйста, выберите департамент:",
             reply_markup=kb,
         )
         _add_message_to_cleanup(context, msg.message_id)
+        try:
+            user_logger.log_user_action(
+                user_id,
+                "prompt_department_shown",
+                {"context": "edit_flow"},
+            )
+        except Exception:
+            pass
         return CONFIRMING_DATA
 
     await show_confirmation(update, context, updated_data)
