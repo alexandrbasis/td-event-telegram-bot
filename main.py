@@ -145,20 +145,36 @@ def smart_cleanup_on_error(func):
                 },
                 func.__name__,
             )
-            error_keyboard = InlineKeyboardMarkup(
-                [
+            # In edit/confirmation context, show Back/Cancel; otherwise show generic options
+            current_state = context.user_data.get("current_state", CONFIRMING_DATA)
+            if current_state == CONFIRMING_DATA:
+                error_keyboard = InlineKeyboardMarkup(
                     [
-                        InlineKeyboardButton(
-                            "🔄 Попробовать снова", callback_data="main_add"
-                        )
-                    ],
+                        [
+                            InlineKeyboardButton(
+                                "↩️ Назад", callback_data="field_edit_cancel"
+                            ),
+                            InlineKeyboardButton(
+                                "❌ Отмена", callback_data="main_cancel"
+                            ),
+                        ]
+                    ]
+                )
+            else:
+                error_keyboard = InlineKeyboardMarkup(
                     [
-                        InlineKeyboardButton(
-                            "🏠 Главное меню", callback_data="main_menu"
-                        )
-                    ],
-                ]
-            )
+                        [
+                            InlineKeyboardButton(
+                                "🔄 Попробовать снова", callback_data="main_add"
+                            )
+                        ],
+                        [
+                            InlineKeyboardButton(
+                                "🏠 Главное меню", callback_data="main_menu"
+                            )
+                        ],
+                    ]
+                )
             try:
                 if update.message:
                     await update.message.reply_text(
@@ -179,7 +195,6 @@ def smart_cleanup_on_error(func):
                 )
 
             # Возвращаем текущее состояние - НЕ завершаем разговор
-            current_state = context.user_data.get("current_state", CONFIRMING_DATA)
             return current_state
 
         except ParticipantNotFoundError as e:
