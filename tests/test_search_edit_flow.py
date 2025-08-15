@@ -421,6 +421,72 @@ class TestSearchEditFlow(unittest.IsolatedAsyncioTestCase):
         self.assertIn("reply_markup", kwargs)
         self.assertEqual(kwargs.get("reply_markup"), "DEPT_KB")
 
+    async def test_department_prompt_has_back_button(self):
+        # Ensure the department prompt message has explanatory text and a back button
+        from main import (
+            handle_action_selection,
+            handle_enum_selection,
+            CONFIRMING_DATA,
+        )
+        from models.participant import Participant
+        from types import SimpleNamespace
+        from unittest.mock import AsyncMock, MagicMock, patch
+
+        user_id = 10
+        participant = Participant(
+            FullNameRU="Тест Пользователь",
+            Gender="M",
+            Size="L",
+            Church="Тест",
+            Role="CANDIDATE",
+        )
+        participant.id = 1001
+
+        context = SimpleNamespace(user_data={"selected_participant": participant}, chat_data={})
+
+        action_query = MagicMock()
+        action_query.answer = AsyncMock()
+        action_query.message = MagicMock()
+        action_query.message.reply_text = AsyncMock()
+        action_update = SimpleNamespace(callback_query=action_query, effective_user=SimpleNamespace(id=user_id))
+        action_query.data = "action_edit"
+
+        with patch("main.user_logger"), \
+             patch("main.COORDINATOR_IDS", [user_id]), \
+             patch("utils.decorators.COORDINATOR_IDS", [user_id]), \
+             patch("main.show_confirmation", new=AsyncMock()):
+            state = await handle_action_selection(action_update, context)
+
+        self.assertEqual(state, CONFIRMING_DATA)
+
+        # Choose Role -> TEAM and verify department prompt
+        context.user_data["field_to_edit"] = "Role"
+        enum_query = MagicMock()
+        enum_query.answer = AsyncMock()
+        enum_query.message = MagicMock()
+        enum_query.message.reply_text = AsyncMock()
+        enum_update = SimpleNamespace(callback_query=enum_query, effective_user=SimpleNamespace(id=user_id))
+        enum_query.data = "role_TEAM"
+
+        with patch("main.show_confirmation", new=AsyncMock()):
+            next_state = await handle_enum_selection(enum_update, context)
+
+        self.assertEqual(next_state, CONFIRMING_DATA)
+
+        # Inspect the reply to ensure message and back button exist
+        args, kwargs = enum_query.message.reply_text.await_args
+        text = args[0] if args else kwargs.get("text", "")
+        self.assertIn("Пожалуйста, выберите департамент", text)
+
+        kb = kwargs.get("reply_markup")
+        self.assertIsNotNone(kb)
+        # InlineKeyboardMarkup.inline_keyboard is list[list[InlineKeyboardButton]]
+        back_found = any(
+            any(getattr(btn, "callback_data", "") == "field_edit_cancel" or getattr(btn, "text", "") == "↩️ Назад" for btn in row)
+            for row in getattr(kb, "inline_keyboard", [])
+        )
+        self.assertTrue(back_found, "Back button not found in department keyboard")
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
