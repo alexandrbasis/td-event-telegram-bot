@@ -356,6 +356,72 @@ class TestSearchEditFlow(unittest.IsolatedAsyncioTestCase):
         )
 
 
+    async def test_prompt_department_after_switch_role_to_team(self):
+        # After switching Role to TEAM during edit confirmation, bot should prompt for Department immediately
+        from main import (
+            handle_action_selection,
+            handle_enum_selection,
+            CONFIRMING_DATA,
+        )
+        from models.participant import Participant
+        from types import SimpleNamespace
+        from unittest.mock import AsyncMock, MagicMock, patch
+        
+        user_id = 9
+        participant = Participant(
+            FullNameRU="Тест Пользователь",
+            Gender="M",
+            Size="L",
+            Church="Тест",
+            Role="CANDIDATE",
+        )
+        participant.id = 999
+        
+        context = SimpleNamespace(user_data={"selected_participant": participant}, chat_data={})
+        
+        # Enter edit flow via action_edit
+        action_query = MagicMock()
+        action_query.answer = AsyncMock()
+        action_query.message = MagicMock()
+        action_query.message.reply_text = AsyncMock()
+        action_update = SimpleNamespace(callback_query=action_query, effective_user=SimpleNamespace(id=user_id))
+        action_query.data = "action_edit"
+        
+        with patch("main.user_logger"), \
+             patch("main.COORDINATOR_IDS", [user_id]), \
+             patch("utils.decorators.COORDINATOR_IDS", [user_id]), \
+             patch("main.show_confirmation", new=AsyncMock()):
+            state = await handle_action_selection(action_update, context)
+        
+        self.assertEqual(state, CONFIRMING_DATA)
+        
+        # Now simulate choosing Role → TEAM
+        context.user_data["field_to_edit"] = "Role"
+        enum_query = MagicMock()
+        enum_query.answer = AsyncMock()
+        enum_query.message = MagicMock()
+        enum_query.message.reply_text = AsyncMock()
+        enum_update = SimpleNamespace(callback_query=enum_query, effective_user=SimpleNamespace(id=user_id))
+        enum_query.data = "role_TEAM"
+        
+        with patch("main.get_department_selection_keyboard_required", return_value="DEPT_KB") as kb_mock, \
+             patch("main.show_confirmation", new=AsyncMock()) as mock_conf:
+            next_state = await handle_enum_selection(enum_update, context)
+        
+        # Should remain in confirming state, role updated, department cleared
+        self.assertEqual(next_state, CONFIRMING_DATA)
+        self.assertEqual(context.user_data.get("parsed_participant", {}).get("Role"), "TEAM")
+        self.assertEqual(context.user_data.get("parsed_participant", {}).get("Department", ""), "")
+        
+        # Should prompt department selection immediately instead of showing confirmation
+        mock_conf.assert_not_awaited()
+        enum_query.message.reply_text.assert_awaited()
+        # Verify the department keyboard was used
+        args, kwargs = enum_query.message.reply_text.await_args
+        self.assertIn("reply_markup", kwargs)
+        self.assertEqual(kwargs.get("reply_markup"), "DEPT_KB")
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
 

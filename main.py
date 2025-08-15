@@ -2886,6 +2886,16 @@ async def handle_enum_selection(
     if job := context.user_data.pop("clear_edit_job", None):
         job.schedule_removal()
 
+    # If user switched Role to TEAM during edit, immediately prompt for Department
+    if field == "Role" and value == "TEAM":
+        kb = get_department_selection_keyboard_required()
+        msg = await query.message.reply_text(
+            "🏢 Вы выбрали роль Команда. Пожалуйста, выберите департамент:",
+            reply_markup=kb,
+        )
+        _add_message_to_cleanup(context, msg.message_id)
+        return CONFIRMING_DATA
+
     await show_confirmation(update, context, updated_data)
     return CONFIRMING_DATA
 
